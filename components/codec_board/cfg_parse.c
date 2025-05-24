@@ -418,6 +418,8 @@ static int fill_codec_cfg(board_cfg_attr_t *attr, uint8_t codec_dir)
             }
         } else if (str_same(attr->attr, "i2c_addr")) {
             codec_cfg->i2c_addr = (uint8_t) atoi(attr->value);
+        } else if (str_same(attr->attr, "adc_input_sel")) {
+            codec_cfg->adc_input_sel = (uint8_t)strtol(attr->value, NULL, 0);
         }
         attr = attr->next;
     }

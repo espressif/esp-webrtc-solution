@@ -113,6 +113,7 @@ typedef struct {
     int8_t       i2c_port;   /*!< I2C port */
     int8_t       i2s_port;   /*!< I2S port */
     bool         use_mclk;   /*!< Whether codec need MCLK clock */
+    uint8_t      adc_input_sel; /*!< ADC input selection, e.g., 0xF0 for LIN1/RIN1, 0xF4 for LIN2/RIN2 on ES8388 */
 } codec_cfg_t;
 
 /**

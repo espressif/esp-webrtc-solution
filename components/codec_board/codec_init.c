@@ -374,6 +374,7 @@ int init_codec(codec_init_cfg_t *cfg)
                     .pa_pin = out_cfg.pa_pin,
                     .hw_gain.pa_gain = out_cfg.pa_gain,
                 };
+                es8388_cfg.adc_input_sel = out_cfg.adc_input_sel;
                 codec_res.out_codec_if = es8388_codec_new(&es8388_cfg);
             } break;
             case CODEC_TYPE_DUMMY: {

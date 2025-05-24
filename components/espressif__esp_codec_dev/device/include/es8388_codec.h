@@ -28,6 +28,7 @@ typedef struct {
     const audio_codec_gpio_if_t *gpio_if;     /*!< Codec GPIO interface */
     esp_codec_dec_work_mode_t    codec_mode;  /*!< Codec work mode on ADC or DAC */
     bool                         master_mode; /*!< Whether codec works as I2S master or not */
+    uint8_t                      adc_input_sel; /*!< ADC input selection (value for ES8388_ADCCONTROL2) */
     int16_t                      pa_pin;      /*!< PA chip power pin */
     bool                         pa_reverted; /*!< false: enable PA when pin set to 1, true: enable PA when pin set to 0 */
     esp_codec_dev_hw_gain_t      hw_gain;     /*!< Hardware gain */

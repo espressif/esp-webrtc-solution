@@ -22,6 +22,7 @@ typedef struct {
     int16_t                      pa_pin;
     bool                         pa_reverted;
     float                        hw_gain;
+    uint8_t                      adc_input_sel; /*!< ADC input selection (value for ES8388_ADCCONTROL2) */
 } audio_codec_es8388_t;
 
 static const esp_codec_dev_vol_range_t vol_range = {
@@ -220,6 +221,7 @@ static int es8388_open(const audio_codec_if_t *h, void *cfg, int cfg_size)
     codec->pa_pin = codec_cfg->pa_pin;
     codec->pa_reverted = codec_cfg->pa_reverted;
     codec->codec_mode = codec_cfg->codec_mode;
+    codec->adc_input_sel = codec_cfg->adc_input_sel;
 
     // 0x04 mute/0x00 unmute&ramp;
     res |= es8388_write_reg(codec, ES8388_DACCONTROL3, 0x04);
@@ -281,7 +283,12 @@ static int es8388_open(const audio_codec_if_t *h, void *cfg, int cfg_size)
     //   ADCFORMAT[1:0] (bits 3:2) = 11 (Left Justified)
     //   ADCDIFF[1:0] (bits 5:4) = 11 (Differential input)
     //   (Bits 7:6 are reserved)
-    res |= es8388_write_reg(codec, ES8388_ADCCONTROL2, 0xf4); // Selects LIN2/RIN2, differential, Left Justified. For LIN1/RIN1 use 0xf0.
+    if (codec->adc_input_sel) {
+        res |= es8388_write_reg(codec, ES8388_ADCCONTROL2, codec->adc_input_sel);
+    } else {
+        res |= es8388_write_reg(codec, ES8388_ADCCONTROL2, 0xf4); // Default to LIN2/RIN2 if not specified
+    }
+    ESP_LOGI(TAG, "Set ES8388_ADCCONTROL2 to: 0x%02x (adc_input_sel: 0x%02x)", codec->adc_input_sel ? codec->adc_input_sel : 0xf4, codec->adc_input_sel);
     res |= es8388_write_reg(codec, ES8388_ADCCONTROL3,0x02);
     // ADC I2S format: 16bit, I2S; MCLK/Fs = 256
     res |= es8388_write_reg(codec, ES8388_ADCCONTROL4,0x0c);
@@ -307,6 +314,8 @@ static int es8388_open(const audio_codec_if_t *h, void *cfg, int cfg_size)
         ESP_LOGI(TAG, "Fail to write register");
         return ESP_CODEC_DEV_WRITE_FAIL;
     }
+    ESP_LOGI(TAG, "ES8388 initialized with pa_pin: %d, pa_reverted: %d, configured hw_gain (after calculation in new): %.2f dB", codec->pa_pin, codec->pa_reverted, codec->hw_gain);
+    ESP_LOGI(TAG, "Initial DAC volume (0dB) set by writing 0x00 to DACCONTROL4/5.");
     codec->is_open = true;
     return ESP_CODEC_DEV_OK;
 }
@@ -363,7 +372,8 @@ static int es8388_set_vol(const audio_codec_if_t *h, float db_value)
     int volume = esp_codec_dev_vol_calc_reg(&vol_range, db_value);
     int res = es8388_write_reg(codec, ES8388_DACCONTROL5, volume);
     res |= es8388_write_reg(codec, ES8388_DACCONTROL4, volume);
-    ESP_LOGD(TAG, "Set volume reg:%x db:%f", volume, db_value);
+    float actual_db_for_calc = db_value - codec->hw_gain;
+    ESP_LOGI(TAG, "Set DAC volume (L/R) to register value: 0x%02x (requested_db_arg: %.2f, db_for_calc: %.2f, hw_gain: %.2f)", volume, db_value, actual_db_for_calc, codec->hw_gain);
     return res ? ESP_CODEC_DEV_WRITE_FAIL : ESP_CODEC_DEV_OK;
 }
 
