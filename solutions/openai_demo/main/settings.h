@@ -37,12 +37,12 @@ extern "C" {
 /**
  * @brief  Set WiFi SSID
  */
-#define WIFI_SSID "XXXX"
+#define WIFI_SSID "xhkap"
 
 /**
  * @brief  Set WiFi password
  */
-#define WIFI_PASSWORD "XXXX"
+#define WIFI_PASSWORD "12345678"
 
 /**
  * @brief  Set default playback volume
