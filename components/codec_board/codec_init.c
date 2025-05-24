@@ -185,6 +185,15 @@ static int _i2s_init(uint8_t port, esp_codec_dev_type_t dev_type, codec_init_cfg
     int ret = i2s_new_channel(&chan_cfg, output == false ? NULL : &i2s_keep[port]->tx_handle,
                               input == false ? NULL : &i2s_keep[port]->rx_handle);
     ESP_LOGI(TAG, "tx:%p rx:%p", i2s_keep[port]->tx_handle, i2s_keep[port]->rx_handle);
+    if (i2s_keep[port]->tx_handle && i2s_keep[port]->rx_handle) {
+        ESP_LOGI(TAG, "Attempting to enable I2S loopback for port %d", port);
+        esp_err_t loopback_ret = i2s_channel_set_loopback(i2s_keep[port]->tx_handle, true);
+        if (loopback_ret == ESP_OK) {
+            ESP_LOGI(TAG, "I2S loopback enabled successfully for port %d", port);
+        } else {
+            ESP_LOGE(TAG, "Failed to enable I2S loopback for port %d, error: %d", port, loopback_ret);
+        }
+    }
     if (i2s_keep[port]->tx_handle) {
         if (init_cfg->out_mode == CODEC_I2S_MODE_STD) {
             ret = i2s_channel_init_std_mode(i2s_keep[port]->tx_handle, &std_cfg);

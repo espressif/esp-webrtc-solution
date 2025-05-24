@@ -88,4 +88,4 @@ camera: {type: dvp, xclk: 15, pclk: 13, vsync: 6, href: 7, d0: 11, d1: 9, d2: 8,
 Board: MUSE_RADIO
 i2c: {sda: 18, scl: 11}
 i2s: {mclk: 0, bclk: 5, ws: 16, dout: 17, din: 4}
-in_out: {codec: ES8388, pa: 46, use_mclk: 0, pa_gain:15, adc_input_sel: 0xf0}
+in_out: {codec: ES8388, pa: 46, use_mclk: 0, pa_gain:20, adc_input_sel: 0xf0}
