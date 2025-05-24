@@ -84,3 +84,8 @@ i2s: {mclk: -1, bclk: 41, ws: 42, dout: -1, din: 2}
 in: {codec: DUMMY, i2c_port: -1}
 sdcard: {clk: 39, cmd: 38, d0: 40}
 camera: {type: dvp, xclk: 15, pclk: 13, vsync: 6, href: 7, d0: 11, d1: 9, d2: 8, d3: 10, d4: 12, d5: 18, d6: 17, d7: 16}
+
+Board: MUSE_RADIO
+i2c: {sda: 18, scl: 11}
+i2s: {mclk: 0, bclk: 5, ws: 16, dout: 17, din: 4}
+in_out: {codec: ES8388, pa: 46, use_mclk: 0, pa_gain:6}

@@ -1,0 +1,24 @@
+menu "Audio Board Configuration"
+
+choice AUDIO_BOARD
+    prompt "Select Audio Board"
+    default AUDIO_BOARD_DEFAULT_P4 if IDF_TARGET_ESP32P4
+    default AUDIO_BOARD_MUSE_RADIO if IDF_TARGET_ESP32S3 # Default to MUSE_RADIO for S3
+    help
+        Select the audio board being used with the project.
+
+    config AUDIO_BOARD_DEFAULT_P4
+        bool "ESP32-P4-Dev-Board-V1.4 (Default for ESP32-P4)"
+        depends on IDF_TARGET_ESP32P4
+
+    config AUDIO_BOARD_S3_KORVO_V2
+        bool "S3_Korvo_V2 (Generic ESP32-S3)"
+        depends on IDF_TARGET_ESP32S3
+
+    config AUDIO_BOARD_MUSE_RADIO
+        bool "MUSE_RADIO (ESP32-S3)"
+        depends on IDF_TARGET_ESP32S3
+
+endchoice
+
+endmenu

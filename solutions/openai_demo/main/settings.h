@@ -16,10 +16,12 @@ extern "C" {
 /**
  * @brief  Set used board name, see `codec_board` README.md for more details
  */
-#if CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_AUDIO_BOARD_DEFAULT_P4
 #define TEST_BOARD_NAME "ESP32_P4_DEV_V14"
-#else
+#elif CONFIG_AUDIO_BOARD_S3_KORVO_V2
 #define TEST_BOARD_NAME "S3_Korvo_V2"
+#elif CONFIG_AUDIO_BOARD_MUSE_RADIO
+#define TEST_BOARD_NAME "MUSE_RADIO"
 #endif
 
 /**
