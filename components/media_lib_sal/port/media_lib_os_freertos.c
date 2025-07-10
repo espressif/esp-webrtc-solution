@@ -40,7 +40,11 @@
 #include "esp_idf_version.h"
 
 #if CONFIG_FREERTOS_ENABLE_TASK_SNAPSHOT
+#if (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 2, 0))
+#include "esp_private/freertos_debug.h"
+#else
 #include "freertos/task_snapshot.h"
+#endif
 #endif
 
 #ifdef __XTENSA__
