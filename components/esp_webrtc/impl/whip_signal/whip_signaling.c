@@ -73,10 +73,11 @@ static int whip_signaling_start(esp_peer_signaling_cfg_t *cfg, esp_peer_signalin
             }
         }
         *h = sig;
-        // TODO force to use controlling role OK
+        // Initial ICE info - let WebRTC layer use user-configured servers
         esp_peer_signaling_ice_info_t ice_info = {
             .is_initiator = true,
         };
+        ESP_LOGI(TAG, "Using user-configured ICE servers from WebRTC config");
         sig->cfg.on_ice_info(&ice_info, sig->cfg.ctx);
         // Trigger connected
         sig->cfg.on_connected(sig->cfg.ctx);
@@ -144,6 +145,13 @@ static int extract_ice_info(whip_signaling_t *sig, char *link)
     if (sig->server_num > MAX_SERVER_SUPPORT) {
         return ESP_PEER_ERR_OVER_LIMITED;
     }
+    
+    // Check if this Link header is for an ICE server
+    if (strstr(link, "rel=\"ice-server\"") == NULL) {
+        ESP_LOGD(TAG, "Skipping non-ICE server Link header: %s", link);
+        return ESP_PEER_ERR_NONE; // Not an error, just not an ICE server
+    }
+    
     esp_peer_ice_server_cfg_t server_cfg = {};
     char *start, *end;
     start = strstr(link, "<");
@@ -160,6 +168,9 @@ static int extract_ice_info(whip_signaling_t *sig, char *link)
     start = end + 1;
     server_cfg.user = GET_PARAM_VALUE(link, "username=\"");
     server_cfg.psw = GET_PARAM_VALUE(link, "credential=\"");
+    
+    ESP_LOGI(TAG, "Found ICE server in Link header: %s", server_cfg.stun_url);
+    
     sig->ice_servers[sig->server_num] = (esp_peer_ice_server_cfg_t *)calloc(1, sizeof(esp_peer_ice_server_cfg_t));
     if (sig->ice_servers[sig->server_num]) {
         memcpy(sig->ice_servers[sig->server_num], &server_cfg, sizeof(esp_peer_ice_server_cfg_t));
@@ -228,13 +239,16 @@ static int whip_signaling_send_msg(esp_peer_signaling_handle_t h, esp_peer_signa
             }
             sig->local_sdp_sent = true;
             if (sig->server_num) {
-                // update ice_info
+                // Update ice_info with servers from WHIP Link headers
+                ESP_LOGI(TAG, "🧊 WHIP Server provided ICE server: %s", sig->ice_servers[0]->stun_url);
                 esp_peer_signaling_ice_info_t iec_info = {
                     .is_initiator = true,
                     .server_info = *sig->ice_servers[0],
                 };
                 // TODO support more servers?
                 sig->cfg.on_ice_info(&iec_info, sig->cfg.ctx);
+            } else {
+                ESP_LOGI(TAG, "No ICE servers provided by WHIP server, using user configuration");
             }
             // Try to extractor stun lists
             esp_peer_signaling_msg_t sdp_msg = {
