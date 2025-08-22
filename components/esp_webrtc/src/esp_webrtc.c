@@ -144,7 +144,25 @@ static void _media_send(void *ctx)
                     .data = video_frame.data,
                     .size = video_frame.size,
                 };
-                esp_peer_send_video(rtc->pc, &video_send_frame);
+                // Call the video send callback if provided (for SEI injection, etc.)
+                bool should_send = true;
+                if (rtc->rtc_cfg.peer_cfg.on_video_send) {
+                    uint8_t *modified_data = rtc->rtc_cfg.peer_cfg.on_video_send(&video_send_frame, rtc->rtc_cfg.peer_cfg.ctx);
+                    if (modified_data == NULL) {
+                        // Callback returned NULL - drop the frame
+                        should_send = false;
+                    } else if (modified_data != video_send_frame.data) {
+                        // Callback returned modified data - create a copy of the frame info
+                        // to avoid modifying the original capture frame
+                        video_send_frame.data = modified_data;
+                        // Size might have changed - callback should update video_send_frame.size if needed
+                    }
+                    // If modified_data == video_send_frame.data, original frame is unchanged
+                }
+                
+                if (should_send) {
+                    esp_peer_send_video(rtc->pc, &video_send_frame);
+                }
             }
             esp_capture_release_path_frame(rtc->capture_path, &video_frame);
             rtc->vid_send_pts = video_frame.pts;

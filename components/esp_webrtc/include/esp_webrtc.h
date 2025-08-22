@@ -79,6 +79,17 @@ typedef struct {
     int (*on_channel_open)(esp_peer_data_channel_info_t *ch, void *ctx);   /*!< Callback invoked when a data channel is opened */
     int (*on_data)(esp_peer_data_frame_t *frame, void *ctx);               /*!< Callback invoked when data is received on the channel */
     int (*on_channel_close)(esp_peer_data_channel_info_t *ch, void *ctx);  /*!< Callback invoked when a data channel is closed */
+    /**
+     * @brief  Video frame send callback (for frame modification/SEI injection)
+     * @param[in]  frame  Video frame information before sending
+     * @param[in]  ctx    User context
+     * @return            Modified frame data or NULL to use original
+     * @note              This callback allows intercepting and modifying outgoing video frames
+     *                    Return the original frame->data to pass through unchanged
+     *                    Return modified data (caller must manage memory) to send modified frame
+     *                    Return NULL to drop the frame
+     */
+    uint8_t* (*on_video_send)(esp_peer_video_frame_t* frame, void* ctx);  /*!< Callback invoked when a video frame is sent */
 } esp_webrtc_peer_cfg_t;
 
 /**
