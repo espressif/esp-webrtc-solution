@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.2.4
+
+### Bug Fixes
+
+- Fixed some turn server can not connect
+- Improve connectivity stability use relay server
+- Fixed `mbedtls_ssl_write` fail due to entropy freed
+- Fixed crash when keep alive checking during disconnect
+- Added DTLS key print for wireshark analysis
+
 ## v1.2.3
 
 ### Features

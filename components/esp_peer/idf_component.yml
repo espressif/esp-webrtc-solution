@@ -1,5 +1,5 @@
 description: Espressif PeerConnection Library
-version: 1.2.3
+version: 1.2.4
 url: "https://github.com/espressif/esp-webrtc-solution/tree/main/components/esp_peer"
 documentation: "https://github.com/espressif/esp-webrtc-solution/tree/main/components/esp_peer/README.md"
 issues: "https://github.com/espressif/esp-webrtc-solution/issues"
