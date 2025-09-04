@@ -35,6 +35,7 @@
 
 #define DTLS_SIGN_ONCE
 #define DTLS_MTU_SIZE 1500
+// #define DUMP_DTLS_KEY
 
 #define BREAK_ON_FAIL(ret) \
     if (ret != 0) {        \
@@ -55,6 +56,7 @@ static bool already_signed = false;
 static mbedtls_ctr_drbg_context signed_ctr_drbg;
 static mbedtls_x509_crt signed_cert;
 static mbedtls_pk_context signed_pkey;
+static mbedtls_entropy_context signed_entropy;
 #endif
 
 static void dtls_srtp_x509_digest(const mbedtls_x509_crt *crt, char *buf)
@@ -158,6 +160,7 @@ static int dtls_srtp_try_gen_cert(dtls_srtp_t *dtls_srtp)
         dtls_srtp->ctr_drbg = signed_ctr_drbg;
         dtls_srtp->cert = signed_cert;
         dtls_srtp->pkey = signed_pkey;
+        dtls_srtp->entropy = signed_entropy;
         return 0;
     }
 #endif
@@ -174,6 +177,7 @@ static int dtls_srtp_try_gen_cert(dtls_srtp_t *dtls_srtp)
     signed_ctr_drbg = dtls_srtp->ctr_drbg;
     signed_cert = dtls_srtp->cert;
     signed_pkey = dtls_srtp->pkey;
+    signed_entropy = dtls_srtp->entropy;
 #endif
     return 0;
 }
@@ -269,8 +273,9 @@ void dtls_srtp_deinit(dtls_srtp_t *dtls_srtp)
     }
     mbedtls_ssl_free(&dtls_srtp->ssl);
     mbedtls_ssl_config_free(&dtls_srtp->conf);
-    mbedtls_entropy_free(&dtls_srtp->entropy);
+
     if (already_signed == false) {
+        mbedtls_entropy_free(&dtls_srtp->entropy);
         mbedtls_x509_crt_free(&dtls_srtp->cert);
         mbedtls_pk_free(&dtls_srtp->pkey);
         mbedtls_ctr_drbg_free(&dtls_srtp->ctr_drbg);
@@ -307,7 +312,16 @@ static void dtls_srtp_key_derivation(void *context, mbedtls_ssl_key_export_type 
 
     memcpy(randbytes, client_random, 32);
     memcpy(randbytes + 32, server_random, 32);
-
+    // Debug key for wireshark
+#ifdef DUMP_DTLS_KEY
+    printf("CLIENT_RANDOM ");
+    for (int i = 0; i < 32; i++)
+        printf("%02x", client_random[i]);
+    printf(" ");
+    for (int i = 0; i < secret_len; i++)
+        printf("%02x", secret[i]);
+    printf("\n\n");
+#endif
     // Export keying material
     if ((ret = mbedtls_ssl_tls_prf(tls_prf_type, secret, secret_len, dtls_srtp_label, randbytes, sizeof(randbytes),
                                    key_material, sizeof(key_material)))
