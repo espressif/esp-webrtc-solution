@@ -161,7 +161,17 @@ static void _media_send(void *ctx)
                 }
                 
                 if (should_send) {
+                // Call the video send callback if provided (for SEI injection, etc.)
+                bool should_send = true;
+                if (rtc->rtc_cfg.peer_cfg.on_video_send) {
+                    ret = rtc->rtc_cfg.peer_cfg.on_video_send(&video_send_frame, rtc->rtc_cfg.peer_cfg.ctx);
+                    if (ret != ESP_CAPTURE_ERR_OK) {
+                         should_send = false;
+                    }
+                }
+                if (should_send) {
                     esp_peer_send_video(rtc->pc, &video_send_frame);
+                }
                 }
             }
             esp_capture_release_path_frame(rtc->capture_path, &video_frame);
