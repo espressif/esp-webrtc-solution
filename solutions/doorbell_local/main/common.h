@@ -13,6 +13,7 @@
 #include "media_sys.h"
 #include "network.h"
 #include "sys_state.h"
+#include "esp_capture_sink.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,6 +58,30 @@ void send_cmd(char *cmd);
  * @brief  Close data channel according channel index
  */
 int close_data_channel(int idx);
+
+/**
+ * @brief  Get capture sink handle by index
+ */
+esp_capture_sink_handle_t get_detect_sink(void);
+
+/**
+ * @brief  pedestrian detection configuration
+ */
+typedef struct {
+   int                       (*detected)(esp_capture_rgn_t *rgn, void *ctx);
+   void                      *ctx;
+} pedestrian_detect_cfg_t;
+
+/**
+ * @brief  Start pedestrian detection
+ */
+int start_pedestrian_detection(pedestrian_detect_cfg_t *cfg);
+
+/**
+ * @brief  Stop pedestrian detection
+ */
+void stop_pedestrian_detection();
+
 
 #ifdef __cplusplus
 }

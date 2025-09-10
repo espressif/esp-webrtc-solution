@@ -31,6 +31,9 @@
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             height: fit-content;
+            max-height: 600px;
+            min-width: 280px;
+            flex-shrink: 0;
         }
         .video-box {
             background: #fff;
@@ -181,11 +184,112 @@
         .open-door-button svg {
             fill: white;
         }
+        .clear-events-button {
+            background-color: #6f42c1;
+            flex-direction: row;
+        }
+        .clear-events-button:hover {
+            background-color: #5e359a;
+        }
+        .clear-events-button svg {
+            width: 28px;
+            height: 28px;
+            fill: white;
+            margin-right: 12px;
+        }
+        .button-content {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            text-align: left;
+        }
+        .button-main {
+            font-size: 16px;
+            font-weight: 500;
+            line-height: 1.2;
+        }
+        .button-sub {
+            font-size: 12px;
+            opacity: 0.8;
+            margin-top: 2px;
+        }
+        .detection-events {
+            margin-top: 15px;
+            padding: 0;
+            background: transparent;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+        .detection-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            flex-shrink: 1;
+        }
+        .detection-list:empty::after {
+            content: "No detection events yet";
+            display: block;
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+        }
+        .detection-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+            background: #fff;
+            transition: background-color 0.2s ease;
+            animation: slideIn 0.3s ease-out;
+        }
+        .detection-item:last-child {
+            border-bottom: none;
+        }
+        .detection-item:hover {
+            background: #f8f9fa;
+        }
+        .detection-item.new-item {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+        }
+        .detection-time {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 4px;
+        }
+        .detection-event {
+            font-weight: bold;
+            color: #28a745;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .detection-event svg {
+            width: 16px;
+            height: 16px;
+            fill: #28a745;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
     </style>
 </head>
 <body>
     <h1>ESP32 Doorbell WebRTC Test</h1>
-    
+
     <div class="main-container">
         <div class="video-container">
             <div class="video-box remote" id="remoteVideoBox">
@@ -217,6 +321,23 @@
                 </svg>
                 Open Door
             </button>
+
+            <button id="clearEventsButton" class="clear-events-button">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 2c1.1 0 2 .9 2 2 0 .74-.4 1.38-1 1.732V7h1.5c.83 0 1.5.67 1.5 1.5v1c0 .83-.67 1.5-1.5 1.5H14v9.5c0 .83-.67 1.5-1.5 1.5h-1c-.83 0-1.5-.67-1.5-1.5V11H8.5C7.67 11 7 10.33 7 9.5v-1C7 7.67 7.67 7 8.5 7H10V5.732C9.4 5.38 9 4.74 9 4c0-1.1.9-2 2-2zm0 2c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/>
+                </svg>
+                <div class="button-content">
+                    <span class="button-main">Detection Events</span>
+                    <span class="button-sub" id="eventCount">0 events</span>
+                </div>
+            </button>
+            
+            <!-- Detection Events List -->
+            <div class="detection-events">
+                <ul id="detectionList" class="detection-list">
+                    <!-- Dynamic list items will be added here -->
+                </ul>
+            </div>
         </div>
     </div>
 
@@ -237,6 +358,8 @@
         let isRinging = false;
         let pendingCandidates = [];
         let dataChannels = [];
+        let detectionEvents = [];
+        let eventCounter = 0;
 
         const localVideo = document.getElementById('localVideo');
         const remoteVideo = document.getElementById('remoteVideo');
@@ -244,6 +367,9 @@
         const hangupButton = document.getElementById('hangupButton');
         const openDoorButton = document.getElementById('openDoorButton');
         const statusDiv = document.getElementById('status');
+        const detectionList = document.getElementById('detectionList');
+        const eventCountSpan = document.getElementById('eventCount');
+        const clearEventsButton = document.getElementById('clearEventsButton');
 
         // Initialize ring sound
         function initRingSound() {
@@ -282,6 +408,91 @@
                 ringSound.currentTime = 0;
             }
         }
+
+        // Add detection event to the list
+        function addDetectionEvent(eventType) {
+            eventCounter++;
+            const timestamp = new Date();
+
+            const event = {
+                id: eventCounter,
+                type: eventType,
+                timestamp: timestamp,
+                timeString: formatTimestamp(timestamp)
+            };
+
+            detectionEvents.unshift(event); // Add to beginning of array
+
+            // Create list item
+            const listItem = document.createElement('li');
+            listItem.className = 'detection-item new-item';
+            listItem.setAttribute('data-id', event.id);
+
+            listItem.innerHTML = `
+                <div class="detection-time">${event.timeString}</div>
+                <div class="detection-event">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                    </svg>
+                    ${eventType}
+                </div>
+            `;
+
+            // Insert at the top of the list
+            detectionList.insertBefore(listItem, detectionList.firstChild);
+
+            // Remove 'new-item' class after animation
+            setTimeout(() => {
+                listItem.classList.remove('new-item');
+            }, 3000);
+
+            // Update event count
+            updateEventCount();
+
+            console.log(`Added detection event: ${eventType} at ${event.timeString}`);
+        }
+
+        // Format timestamp for display
+        function formatTimestamp(date) {
+            const options = {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            };
+            return date.toLocaleDateString('en-US', options).replace(/(\d+)\/(\d+)\/(\d+),\s/, '$3-$1-$2 ');
+        }
+
+        // Update event count display
+        function updateEventCount() {
+            const count = detectionEvents.length;
+            eventCountSpan.textContent = count === 1 ? '1 event' : `${count} events`;
+        }
+
+        // Clear all detection events
+        function clearDetectionEvents() {
+            detectionEvents = [];
+            detectionList.innerHTML = '';
+            eventCounter = 0;
+            updateEventCount();
+            console.log('Cleared all detection events');
+        }
+
+        // Clear events button handler
+        clearEventsButton.onclick = () => {
+            if (detectionEvents.length === 0) {
+                // If no events, just show info
+                alert('No detection events to clear.');
+                return;
+            }
+            
+            if (confirm(`Clear all ${detectionEvents.length} detection event${detectionEvents.length === 1 ? '' : 's'}?`)) {
+                clearDetectionEvents();
+            }
+        };
 
         // Call button click handler
         callButton.onclick = async () => {
@@ -361,7 +572,7 @@
             }
 
             eventSource = new EventSource(signalingUrl);
-            
+
             eventSource.onopen = () => {
                 console.log('SSE connection opened');
                 statusDiv.textContent = 'Connected to signaling server';
@@ -372,7 +583,7 @@
                 console.log('Received SSE message:', event.data);
                 try {
                     const message = JSON.parse(event.data);
-                    
+
                     switch (message.type) {
                         case 'connected':
                             console.log('Signaling server connected');
@@ -420,7 +631,7 @@
                 console.error('EventSource error:', error);
                 statusDiv.textContent = 'Signaling connection error';
                 statusDiv.className = 'disconnected';
-                
+
                 if (eventSource) {
                     eventSource.close();
                     setTimeout(() => {
@@ -444,6 +655,10 @@
                     callButton.disabled = false;
                     callButton.classList.add('ringing');
                     hangupButton.disabled = false;
+                    break;
+                case 'PEDESTRIAN_DETECTED':
+                    console.log('Pedestrian detected...');
+                    addDetectionEvent('Pedestrian Detected');
                     break;
                 // Following command is by controlling only
                 case 'OPEN_DOOR':
@@ -483,17 +698,17 @@
 
             try {
                 peerConnection = new RTCPeerConnection(configuration);
-                
+
                 // Create two data channels
                 const dataChannel1 = peerConnection.createDataChannel('channel1');
                 const dataChannel2 = peerConnection.createDataChannel('channel2');
-                
+
                 // Setup data channel 1
                 setupDataChannel(dataChannel1);
-                
+
                 // Setup data channel 2
                 setupDataChannel(dataChannel2);
-                
+
                 // Handle incoming data channels
                 peerConnection.ondatachannel = (event) => {
                     console.log('Received data channel:', event.channel.label);
@@ -540,8 +755,8 @@
                 // Handle connection state changes
                 peerConnection.onconnectionstatechange = () => {
                     console.log('Connection state changed:', peerConnection.connectionState);
-                    if (peerConnection.connectionState === 'disconnected' || 
-                        peerConnection.connectionState === 'failed' || 
+                    if (peerConnection.connectionState === 'disconnected' ||
+                        peerConnection.connectionState === 'failed' ||
                         peerConnection.connectionState === 'closed') {
                         handleHangup();
                     }
@@ -565,7 +780,7 @@
                     if (!peerConnection) {
                         throw new Error('Failed to create peer connection');
                     }
-                    
+
                     if (!localStream) {
                         localStream = await navigator.mediaDevices.getUserMedia({
                             video: true,
@@ -573,7 +788,7 @@
                         });
                         localVideo.srcObject = localStream;
                     }
-                    
+
                     // Add local stream
                     if (localStream) {
                         console.log('Adding local tracks to peer connection');
@@ -688,17 +903,19 @@
             callButton.classList.remove('ringing');
             hangupButton.disabled = true;
             openDoorButton.disabled = false;
+            // Initialize detection events display
+            updateEventCount();
 
             // Add click handler for video toggle
             const localVideoBox = document.getElementById('localVideoBox');
             const remoteVideoBox = document.getElementById('remoteVideoBox');
-            
+
             localVideoBox.addEventListener('click', function() {
                 const isMaximized = localVideoBox.classList.contains('maximized');
-                
+
                 // Disable click during transition
                 localVideoBox.style.pointerEvents = 'none';
-                
+
                 if (!isMaximized) {
                     // Maximize local video
                     localVideoBox.classList.add('maximized');
@@ -740,11 +957,11 @@
         // Add this new function after createPeerConnection
         function setupDataChannel(channel) {
             let messageCount = 0;
-            
+
             // Store channel handle in the array
             dataChannels.push(channel);
             console.log(`Data channel ${channel.label} added to dataChannels array. Access via dataChannels[${dataChannels.length-1}]`);
-            
+
             // Function to create 8KB message
             function createLargeMessage(count) {
                 const header = `This is the ${count} on ${channel.label}\n`;
@@ -752,19 +969,28 @@
                 const padding = getCountChar(count).repeat(remainingSize);
                 return header + padding;
             }
-            
+
             channel.onopen = () => {
                 console.log(`Data channel ${channel.label} opened`);
                 // Start sending messages every 2 seconds
-                setInterval(() => {
+                setInterval(async () => {  // ← Add 'async' here
                     if (channel.readyState === 'open') {
                         messageCount++;
                         const message = createLargeMessage(messageCount);
                         channel.send(message);
-                        console.log(`Sent on ${channel.label}: ${message.length} bytes`);
+                        console.log(`Sent on ${channel.label}: ${message.length} bytes, buffered: ${channel.bufferedAmount}`);
                     }
+                    // Check for SCTP deadlock indicators
+                    if (channel.bufferedAmount > 65536) {
+                        console.error('SCTP DEADLOCK: DataChannel buffer full!', channel.bufferedAmount);
+                    }
+                    if (channel.readyState !== 'open') {
+                        console.error('SCTP FAILURE: DataChannel state changed to:', channel.readyState);
+                    }
+
                 }, 2000);
             };
+
 
             channel.onclose = () => {
                 console.log(`Data channel ${channel.label} closed`);
@@ -784,7 +1010,7 @@
                 // Get only the first line (up to the newline character)
                 const firstLine = event.data.split('\n')[0];
                 console.log(`Received ${firstLine} ${event.data.length} bytes`);
-                
+
                 // Extract only the count number using regex
                 const countMatch = firstLine.match(/Send to .* count (\d+)/);
                 const sendCount = countMatch ? countMatch[1] : 0;
@@ -795,7 +1021,7 @@
                 if (!allMatch) {
                     console.error(`Pattern verification expected all characters to be: ${expectedChar})`);
                     // Log first 10 characters that don't match
-                    const mismatches = remainingData.split('').slice(0, 10).map(char => 
+                    const mismatches = remainingData.split('').slice(0, 10).map(char =>
                         `${char} (ASCII ${char.charCodeAt(0)})`
                     );
                     console.error(`First 10 received characters: ${mismatches.join(', ')}`);
@@ -804,4 +1030,4 @@
         }
     </script>
 </body>
-</html> 
+</html>
