@@ -81,6 +81,7 @@ typedef struct {
     esp_peer_signaling_ice_info_t ice_info;
     bool                          ice_info_loaded;
     bool                          signaling_connected;
+    bool                          no_auto_capture;
 
     uint8_t *aud_fifo;
     uint32_t aud_fifo_size;
@@ -201,7 +202,11 @@ static int stop_stream(webrtc_t *rtc)
         rtc->send_going = false;
         WAIT_FOR_BITS(PC_SEND_QUIT_BIT);
     }
-    esp_capture_stop(rtc->media_provider.capture);
+    if (rtc->no_auto_capture == false) {
+        esp_capture_stop(rtc->media_provider.capture);
+    } else {
+        esp_capture_sink_enable(rtc->capture_path, ESP_CAPTURE_RUN_MODE_DISABLE);
+    }
     av_render_reset(rtc->play_handle);
     return 0;
 }
@@ -787,6 +792,16 @@ int esp_webrtc_set_media_provider(esp_webrtc_handle_t handle, esp_webrtc_media_p
     rtc->media_provider = *provider;
     // Temp use esp_codec_dev as simple player
     rtc->play_handle = provider->player;
+    return ESP_PEER_ERR_NONE;
+}
+
+int esp_webrtc_set_no_auto_capture(esp_webrtc_handle_t handle, bool no_auto_capture)
+{
+    if (handle == NULL) {
+        return ESP_PEER_ERR_INVALID_ARG;
+    }
+    webrtc_t *rtc = (webrtc_t *)handle;
+    rtc->no_auto_capture = no_auto_capture;
     return ESP_PEER_ERR_NONE;
 }
 

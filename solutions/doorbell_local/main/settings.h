@@ -37,6 +37,18 @@ extern "C" {
 #define VIDEO_FPS    10
 #endif
 
+#ifdef CONFIG_DOORBELL_SUPPORT_PEDESTRIAN_DETECT
+#if CONFIG_IDF_TARGET_ESP32P4
+#define DETECT_WIDTH  320
+#define DETECT_HEIGHT 180
+#define DETECT_FPS    2
+#else
+#define DETECT_WIDTH  320
+#define DETECT_HEIGHT 240
+#define DETECT_FPS    1
+#endif
+#endif
+
 /**
  * @brief  Set for wifi ssid
  */

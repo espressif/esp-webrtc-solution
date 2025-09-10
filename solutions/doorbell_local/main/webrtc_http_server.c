@@ -404,7 +404,6 @@ static int webrtc_http_server_send_msg(esp_peer_signaling_handle_t sig, esp_peer
         case ESP_PEER_SIGNALING_MSG_CUSTOMIZED:
             cJSON_AddStringToObject(msg_root, "type", "customized");
             cJSON_AddStringToObject(msg_root, "data", (char *)msg->data);
-            printf("go %d\n", __LINE__);
             break;
         default:
             cJSON_Delete(msg_root);
@@ -434,10 +433,6 @@ static int webrtc_http_server_deinit(esp_peer_signaling_handle_t sig)
         return -1;
     }
     ESP_LOGI(TAG, "Start to stop https server");
-    if (server) {
-        httpd_ssl_stop(server);
-        server = NULL;
-    }
     if (signaling_queue) {
         // Clear and delete the queue
         char *msg = NULL;
@@ -454,6 +449,10 @@ static int webrtc_http_server_deinit(esp_peer_signaling_handle_t sig)
         while (event_stream_connected) {
             vTaskDelay(pdMS_TO_TICKS(100));
         }
+    }
+    if (server) {
+        httpd_ssl_stop(server);
+        server = NULL;
     }
     if (signaling_queue) {
         vQueueDelete(signaling_queue);

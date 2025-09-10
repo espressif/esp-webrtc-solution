@@ -1,0 +1,9 @@
+menu "DoorBell Local Demo"
+
+config DOORBELL_SUPPORT_PEDESTRIAN_DETECT
+   bool "Support pedestrian detection"
+   default n
+   depends on IDF_TARGET_ESP32P4 || IDF_TARGET_ESP32S3
+   help
+      Enable this option to enable pedestrian detection
+endmenu

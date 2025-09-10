@@ -187,6 +187,22 @@ int esp_webrtc_open(esp_webrtc_cfg_t *cfg, esp_webrtc_handle_t *rtc_handle);
 int esp_webrtc_set_media_provider(esp_webrtc_handle_t rtc_handle, esp_webrtc_media_provider_t *provider);
 
 /**
+ * @brief  Set to disable auto capture for WebRTC
+ *
+ * @note  In default capture will start and stop internally by WebRTC
+ *        In some scenario capture is controlled by other module, capture is only one sink path of it
+ *        Users can call this API to disable auto control of capture
+ *
+ * @param[in]  rtc_handle       WebRTC handle
+ * @param[in]  no_auto_capture  Disable auto capture or not
+ *
+ * @return
+ *      - ESP_PEER_ERR_NONE         On success
+ *      - ESP_PEER_ERR_INVALID_ARG  Invalid argument
+ */
+int esp_webrtc_set_no_auto_capture(esp_webrtc_handle_t rtc_handle, bool no_auto_capture);
+
+/**
  * @brief  WebRTC set event handler
  *
  * @param[in]  rtc_handle  WebRTC handle
