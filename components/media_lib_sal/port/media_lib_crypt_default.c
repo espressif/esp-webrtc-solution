@@ -163,8 +163,6 @@ static int _aes_crypt_cbc(media_lib_aes_handle_t ctx, bool decrypt_mode, uint8_t
 
 esp_err_t media_lib_add_default_crypt_adapter(void)
 {
-    // TODO not support AES on P4 currently
-    return 0;
     media_lib_crypt_t crypt_lib = {
         .md5_init = _md5_init,
         .md5_free = _md5_free,

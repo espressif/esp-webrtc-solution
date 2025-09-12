@@ -9,3 +9,10 @@ dependencies:
   espressif/esp_capture: "~0.7"
   esp_peer:
     override_path: ../esp_peer
+  tempotian/media_lib_sal:
+    require: public
+    version: "~0.9"
+  tempotian/av_render:
+    require: public
+    version: "~0.9"
+

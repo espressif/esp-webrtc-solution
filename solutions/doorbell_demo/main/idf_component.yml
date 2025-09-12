@@ -4,8 +4,6 @@ dependencies:
   idf:
     version: ">=5.0"
   ## Import needed components only
-  render_impl:
-     path: ../../../components/av_render/render_impl
   espressif/esp_h264:
     version: "1.0.4"
     rules:

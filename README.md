@@ -4,10 +4,11 @@
 
 This repository provides everything needed to build a WebRTC application.  
 It includes the `esp_webrtc` core code along with its dependent components, such as:  
-- **`esp_capture`**: For capturing media data  
+- **`esp_peer`**: WebRTC PeerConnection realization
+- **`esp_capture`**: For capturing media data (moved to [esp_capture](https://components.espressif.com/components/espressif/esp_capture/))  
 - **`av_render`**: For playing media data  
 
-Additionally, the repository contains three several demo applications that demonstrate how to use `esp_webrtc`.
+Additionally, the repository contains several demo applications that demonstrate how to use `esp_webrtc`.
 
 ## Solutions
 
@@ -31,4 +32,6 @@ This demo show how to use `esp_webrtc` to publish streaming data to WHIP server.
 
 ### 6. Doorbell Local Demo
 This demo sets up a local doorbell application that operates without external signaling servers.  
-An ESP32 series board acts as the signaling server, allowing users to connect directly for WebRTC testing.
+An ESP32 series board acts as the signaling server, allowing users to connect directly for WebRTC testing.  
+Meanwhile provide AI pedestrian detect capability in realtime. 
+
