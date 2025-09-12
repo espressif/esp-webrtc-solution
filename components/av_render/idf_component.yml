@@ -1,5 +1,19 @@
 ## IDF Component Manager Manifest File
+description: Multimedia Render
+version: 0.9.1
+url: "https://github.com/espressif/esp-webrtc-solution/tree/main/components/av_render"
+documentation: "https://github.com/espressif/esp-webrtc-solution/tree/main/components/av_render/README.md"
+issues: "https://github.com/espressif/esp-webrtc-solution/issues"
+
+tags:
+   - "Multimedia"
+   - "Player"
+   - "Video"
+   - "Render"
+
 dependencies:
   espressif/esp_audio_codec: "~2.3.0"
   espressif/esp_video_codec: "~0.5.2"
   espressif/esp_audio_effects: "~1.1.0"
+  espressif/esp_codec_dev: "~1.4"
+  tempotian/media_lib_sal: "~0.9"

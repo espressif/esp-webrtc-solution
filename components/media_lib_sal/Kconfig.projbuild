@@ -1,4 +1,4 @@
-menu "ADF Library Configuration"
+menu "Media Library Abstract Layer Configuration"
 
 config MEDIA_PROTOCOL_LIB_ENABLE
     bool "Enable Media Protocol Library"

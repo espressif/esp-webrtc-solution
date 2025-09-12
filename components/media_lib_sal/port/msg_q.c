@@ -163,7 +163,7 @@ int msg_q_recv(msg_q_handle_t q, void* msg, int size, bool no_wait) {
             // printf("Recv q %s OK have: %d\n", q->name, q->filled);
             q->filled--;
             q->cur++;
-            q->cur %= q->number;   
+            q->cur %= q->number;
         }
         else {
             if (q->reset) {

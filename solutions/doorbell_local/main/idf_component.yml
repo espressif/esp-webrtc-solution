@@ -4,8 +4,6 @@ dependencies:
   idf:
     version: ">=5.0"
   ## Import needed components only
-  render_impl:
-     path: ../../../components/av_render/render_impl
   espressif/esp_h264:
     version: "1.0.4"
     rules:
@@ -14,3 +12,13 @@ dependencies:
     version: "^0.2.0"
     rules:
       - if: target in [esp32p4, esp32s3]
+  tempotian/codec_board:
+      override_path: ../../../components/codec_board
+  tempotian/esp_webrtc:
+      override_path: ../../../components/esp_webrtc
+  tempotian/media_lib_sal:
+      override_path: ../../../components/media_lib_sal
+  tempotian/av_render:
+      override_path: ../../../components/av_render
+  webrtc_utils:
+      override_path: ../../../components/webrtc_utils

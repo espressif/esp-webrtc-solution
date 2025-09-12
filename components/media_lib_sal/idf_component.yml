@@ -1,4 +1,12 @@
 ## IDF Component Manager Manifest File
-dependencies:
-  idf:
-    version: ">=4.1.0"
+description: Media Library System Abstract layer
+version: 0.9.0
+url: "https://github.com/espressif/esp-webrtc-solution/tree/main/components/media_lib_sal"
+documentation: "https://github.com/espressif/esp-webrtc-solution/tree/main/components/media_lib_sal/README.md"
+issues: "https://github.com/espressif/esp-webrtc-solution/issues"
+
+tags:
+   - "Multimedia"
+   - "OSLibrary"
+   - "System"
+   - "Network"

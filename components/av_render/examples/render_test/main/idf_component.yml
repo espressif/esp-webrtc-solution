@@ -1,0 +1,10 @@
+## IDF Component Manager Manifest File
+dependencies:
+  ## Required IDF version
+  idf:
+    version: ">=4.1.0"
+  tempotian/codec_board: "~1.0"
+  espressif/esp_capture: "~0.7"
+  tempotian/av_render:
+    override_path: ../../../../av_render
+  tempotian/media_lib_sal: "~0.9"
