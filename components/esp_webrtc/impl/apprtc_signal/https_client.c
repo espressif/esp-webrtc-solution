@@ -60,6 +60,7 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
             ESP_LOGD(TAG, "HTTP_EVENT_HEADER_SENT");
             break;
         case HTTP_EVENT_ON_HEADER:
+            ESP_LOGI(TAG, "📋 Header: %s = %s", evt->header_key, evt->header_value);
             if (info->header) {
                 info->header(evt->header_key, evt->header_value, info->ctx);
             }
@@ -103,6 +104,7 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
             }
             break;
         case HTTP_EVENT_REDIRECT:
+            ESP_LOGI(TAG, "HTTP_EVENT_REDIRECT - Following redirect");
             esp_http_client_set_redirection(evt->client);
             break;
     }
@@ -123,60 +125,217 @@ int https_send_request(const char *method, char **headers, const char *url, char
         .crt_bundle_attach = esp_crt_bundle_attach,
 #endif
         .user_data = &info,
-        .timeout_ms = 10000, // Change default timeout to be 10s
+        .timeout_ms = 30000, // Increase timeout to 30s for WHIP servers
+        .buffer_size = 1536,  // Reasonable buffer size for headers (1.5KB)
+        .buffer_size_tx = 1536, // Reasonable TX buffer size (1.5KB)
+        .max_redirection_count = 0, // Disable auto redirects to preserve headers/body
+        .disable_auto_redirect = true, // Handle redirects manually
+        .keep_alive_enable = true,
+        .keep_alive_idle = 5,
+        .keep_alive_interval = 5,
+        .keep_alive_count = 3,
     };
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    if (client == NULL) {
-        ESP_LOGE(TAG, "Fail to init client");
-        return -1;
-    }
-    // POST
+    
     int err = 0;
-    esp_http_client_set_url(client, url);
-    if (strcmp(method, "POST") == 0) {
-        esp_http_client_set_method(client, HTTP_METHOD_POST);
-    } else if (strcmp(method, "DELETE") == 0) {
-        esp_http_client_set_method(client, HTTP_METHOD_DELETE);
-    } else if (strcmp(method, "PATCH") == 0) {
-        esp_http_client_set_method(client, HTTP_METHOD_PATCH);
-    } else {
-        err = -1;
-        goto _exit;
-    }
-    bool has_content_type = false;
-    if (headers) {
-        int i = 0;
-        // TODO suppose header writable
-        while (headers[i]) {
-            char *dot = strchr(headers[i], ':');
-            if (dot) {
-                *dot = 0;
-                if (strcmp(headers[i], "Content-Type") == 0) {
-                    has_content_type = true;
-                }
-                char *cont = dot + 2;
-                esp_http_client_set_header(client, headers[i], cont);
-                *dot = ':';
+    int retry_count = 0;
+    const int max_retries = 3;
+    const int retry_delay_ms = 2000;
+    const int max_redirects = 10;
+    char current_url[512];
+    strncpy(current_url, url, sizeof(current_url) - 1);
+    current_url[sizeof(current_url) - 1] = '\0';
+    
+    while (retry_count <= max_retries) {
+        int redirect_count = 0;
+        
+        // Handle redirects manually
+        while (redirect_count < max_redirects) {
+            config.url = current_url; // Use current URL (may be redirected)
+            esp_http_client_handle_t client = esp_http_client_init(&config);
+            if (client == NULL) {
+                ESP_LOGE(TAG, "Fail to init client");
+                return -1;
             }
-            i++;
+            
+            esp_http_client_set_url(client, current_url);
+        if (strcmp(method, "POST") == 0) {
+            esp_http_client_set_method(client, HTTP_METHOD_POST);
+        } else if (strcmp(method, "DELETE") == 0) {
+            esp_http_client_set_method(client, HTTP_METHOD_DELETE);
+        } else if (strcmp(method, "PATCH") == 0) {
+            esp_http_client_set_method(client, HTTP_METHOD_PATCH);
+        } else {
+            err = -1;
+            esp_http_client_cleanup(client);
+            break; // Exit redirect loop and retry loop
+        }
+        
+        bool has_content_type = false;
+        if (headers) {
+            int i = 0;
+            // TODO suppose header writable
+            while (headers[i]) {
+                char *dot = strchr(headers[i], ':');
+                if (dot) {
+                    *dot = 0;
+                    if (strcmp(headers[i], "Content-Type") == 0) {
+                        has_content_type = true;
+                    }
+                    char *cont = dot + 2;
+                    esp_http_client_set_header(client, headers[i], cont);
+                    *dot = ':';
+                }
+                i++;
+            }
+        }
+        
+        if (data != NULL) {
+            if (has_content_type == false) {
+                esp_http_client_set_header(client, "Content-Type", "text/plain;charset=UTF-8");
+            }
+            esp_http_client_set_post_field(client, data, strlen(data));
+        }
+        
+        // Log request headers for debugging redirects
+        if (redirect_count > 0) {
+            ESP_LOGD(TAG, "Request headers for redirect %d:", redirect_count);
+            if (headers) {
+                int i = 0;
+                while (headers[i]) {
+                    ESP_LOGD(TAG, "  %s", headers[i]);
+                    i++;
+                }
+            }
+        }
+        
+            ESP_LOGI(TAG, "Performing HTTP %s request to %s (attempt %d/%d, redirect %d/%d)", 
+                     method, current_url, retry_count + 1, max_retries + 1, redirect_count + 1, max_redirects);
+            
+            if (data) {
+                ESP_LOGD(TAG, "Request body length: %d bytes", strlen(data));
+                ESP_LOGD(TAG, "Request body preview: %.200s%s", data, strlen(data) > 200 ? "..." : "");
+            }
+            
+            err = esp_http_client_perform(client);
+            
+            if (err == ESP_OK) {
+                int status_code = esp_http_client_get_status_code(client);
+                ESP_LOGI(TAG, "HTTP %s Status = %d, content_length = %lld",
+                         method, status_code, esp_http_client_get_content_length(client));
+                
+                // Handle redirects manually
+                if (status_code >= 300 && status_code < 400) {
+                    ESP_LOGI(TAG, "Received redirect response %d", status_code);
+                    
+                    // Log all response headers for debugging
+                    ESP_LOGD(TAG, "Response headers:");
+                    char *header_buffer = malloc(1024);
+                    if (header_buffer) {
+                        int header_len = esp_http_client_get_header(client, "Location", &header_buffer);
+                        if (header_len > 0) {
+                            ESP_LOGD(TAG, "  Location: %s", header_buffer);
+                        }
+                        
+                        header_len = esp_http_client_get_header(client, "Content-Type", &header_buffer);
+                        if (header_len > 0) {
+                            ESP_LOGD(TAG, "  Content-Type: %s", header_buffer);
+                        }
+                        
+                        header_len = esp_http_client_get_header(client, "Server", &header_buffer);
+                        if (header_len > 0) {
+                            ESP_LOGD(TAG, "  Server: %s", header_buffer);
+                        }
+                        
+                        free(header_buffer);
+                    }
+                    
+                    // Get Location header for redirect
+                    char *location = NULL;
+                    int location_len = esp_http_client_get_header(client, "Location", &location);
+                    
+                    if (location_len > 0 && location) {
+                        ESP_LOGI(TAG, "Redirect %d: %s -> %s", redirect_count + 1, current_url, location);
+                        
+                        // Validate URL length
+                        if (strlen(location) >= sizeof(current_url)) {
+                            ESP_LOGE(TAG, "Redirect URL too long: %d chars", strlen(location));
+                            esp_http_client_cleanup(client);
+                            break;
+                        }
+                        
+                        // Handle relative URLs
+                        if (strncmp(location, "http://", 7) == 0 || strncmp(location, "https://", 8) == 0) {
+                            // Absolute URL
+                            strncpy(current_url, location, sizeof(current_url) - 1);
+                            current_url[sizeof(current_url) - 1] = '\0';
+                        } else {
+                            // Relative URL - need to construct full URL
+                            ESP_LOGW(TAG, "Relative redirect URL not fully supported: %s", location);
+                            strncpy(current_url, location, sizeof(current_url) - 1);
+                            current_url[sizeof(current_url) - 1] = '\0';
+                        }
+                        esp_http_client_cleanup(client);
+                        redirect_count++;
+                        continue; // Try again with new URL
+                    } else {
+                        ESP_LOGW(TAG, "Redirect response %d but no valid Location header (len=%d)", 
+                                status_code, location_len);
+                        
+                        // Log response body for debugging
+                        if (info.data && info.fill_size > 0) {
+                            ESP_LOGD(TAG, "Response body: %.*s", info.fill_size, (char*)info.data);
+                        }
+                        
+                        esp_http_client_cleanup(client);
+                        break; // Exit redirect loop, will retry
+                    }
+                } else {
+                    // Success or non-redirect error
+                    if (strcmp(url, current_url) != 0) {
+                        ESP_LOGI(TAG, "Final URL after %d redirects: %s", redirect_count, current_url);
+                    }
+                    esp_http_client_cleanup(client);
+                    break; // Exit redirect loop
+                }
+            } else {
+                ESP_LOGW(TAG, "HTTP %s request failed (attempt %d/%d, redirect %d/%d): %s", 
+                         method, retry_count + 1, max_retries + 1, redirect_count + 1, max_redirects, esp_err_to_name(err));
+                
+                // Log additional error details
+                if (err == ESP_ERR_HTTP_EAGAIN) {
+                    ESP_LOGW(TAG, "Connection timeout - server may be slow to respond");
+                } else if (err == ESP_FAIL) {
+                    ESP_LOGW(TAG, "HTTP client internal error");
+                }
+                
+                esp_http_client_cleanup(client);
+                break; // Exit redirect loop, will retry
+            }
+        }
+        
+        if (redirect_count >= max_redirects) {
+            ESP_LOGE(TAG, "Too many redirects (%d), giving up", max_redirects);
+            err = ESP_FAIL;
+        }
+        
+        if (err == ESP_OK) {
+            break; // Success, exit retry loop
+        }
+        
+        // Retry logic
+        if (retry_count < max_retries) {
+            ESP_LOGI(TAG, "Retrying in %d ms...", retry_delay_ms);
+            vTaskDelay(pdMS_TO_TICKS(retry_delay_ms));
+            retry_count++;
+            // Reset URL for retry
+            strncpy(current_url, url, sizeof(current_url) - 1);
+            current_url[sizeof(current_url) - 1] = '\0';
+        } else {
+            ESP_LOGE(TAG, "HTTP %s request failed after %d attempts", method, max_retries + 1);
+            break;
         }
     }
-    if (data != NULL) {
-        if (has_content_type == false) {
-            esp_http_client_set_header(client, "Content-Type", "text/plain;charset=UTF-8");
-        }
-        esp_http_client_set_post_field(client, data, strlen(data));
-    }
-    err = esp_http_client_perform(client);
-    if (err == ESP_OK) {
-        ESP_LOGI(TAG, "HTTP POST Status = %d, content_length = %lld",
-                 esp_http_client_get_status_code(client),
-                 esp_http_client_get_content_length(client));
-    } else {
-        ESP_LOGE(TAG, "HTTP POST request failed: %s", esp_err_to_name(err));
-    }
-_exit:
-    esp_http_client_cleanup(client);
+    
     if (info.data) {
         free(info.data);
     }
