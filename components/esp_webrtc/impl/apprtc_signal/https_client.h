@@ -24,9 +24,20 @@
 
 #pragma once
 
+#include <stdbool.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define DEFAULT_HTTPS_TIMEOUT             10000
+#define DEFAULT_HTTPS_MAX_REDIRECTS       3
+#define DEFAULT_HTTPS_HEAD_SIZE           4096
+#define DEFAULT_HTTPS_TX_SIZE             4096
+#define DEFAULT_HTTPS_KEEP_ALIVE_ENABLE   true
+#define DEFAULT_HTTPS_KEEP_ALIVE_COUNT    3
+#define DEFAULT_HTTPS_KEEP_ALIVE_IDLE     5
+#define DEFAULT_HTTPS_KEEP_ALIVE_INTERVAL 3
 
 /**
  * @brief  Https response data
@@ -54,6 +65,34 @@ typedef void (*http_body_t)(http_resp_t *resp, void *ctx);
 typedef void (*http_header_t)(const char *key, const char *value, void *ctx);
 
 /**
+ * @brief  HTTP request configuration
+ *         These settings will bypass to `esp_http_client` or handled by this module internally
+ */
+typedef struct {
+    uint16_t  timeout_ms;          /*!< Connection timeout (unit milliseconds) */
+    uint8_t   max_redirects;       /*!< Maximum redirection limit */
+    uint16_t  buffer_size;         /*!< HTTP header buffer size */
+    uint16_t  buffer_size_tx;      /*!< HTTP send buffer size */
+    bool      keep_alive_enable;   /*!< Keep alive enable or not */
+    uint8_t   keep_alive_count;    /*!< Keep alive count */
+    uint16_t  keep_alive_idle;     /*!< Keep alive idle */
+    uint16_t  keep_alive_interval; /*!< Keep alive send interval */
+} https_request_cfg_t;
+
+/**
+ * @brief  HTTP request information
+ */
+typedef struct {
+    const char    *method;     /*!< HTTP method POST, GET, DELETE, PATCH etc */
+    const char    *url;        /*!< Request URL */
+    char         **headers;    /*!< HTTP headers Arrays of "Type: Info" */
+    char          *data;       /*!< Content data to send (special for post) */
+    http_header_t  header_cb;  /*!< Response header callback */
+    http_body_t    body_cb;    /*!< Response body callback */
+    void          *ctx;        /*!< Callback context */
+} https_request_t;
+
+/**
  * @brief  Send https requests
  *
  * @note  This API is run in synchronized until response or error returns
@@ -75,7 +114,7 @@ int https_send_request(const char *method, char **headers, const char *url, char
 /**
  * @brief  Do post https request
  *
- * @note  This API will internally call `https_send_request`
+ * @note  This API will internally call `https_request_advance`
  *
  * @param[in]  url        HTTPS URL to post
  * @param[in]  headers    HTTP headers, headers are array of "Type: Info", last one need set to NULL
@@ -89,6 +128,20 @@ int https_send_request(const char *method, char **headers, const char *url, char
  *       - Others  Fail to do https request
  */
 int https_post(const char *url, char **headers, char *data, http_header_t header_cb, http_body_t body, void *ctx);
+
+/**
+ * @brief  Set https request with advanced options
+ *
+ * @note  This API is run in synchronized until response or error returns
+ *
+ * @param[in]  cfg  Request HTTP configurations
+ * @param[in]  req  Request settings
+ *
+ * @return
+ *       - 0       On success
+ *       - Others  Fail to do https request
+ */
+int https_request_advance(https_request_cfg_t *cfg, https_request_t *req);
 
 #ifdef __cplusplus
 }
