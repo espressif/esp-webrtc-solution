@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.2.5
+
+### Bug Fixes
+
+- Fixed crash regression when ICE server number set to 0
+- Fixed relay only setting fail to build connection
+
 ## v1.2.4
 
 ### Bug Fixes
