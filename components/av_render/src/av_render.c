@@ -2076,31 +2076,40 @@ int av_render_reset(av_render_handle_t h)
     av_render_msg_t msg = {
         .type = AV_RENDER_MSG_CLOSE,
     };
-    int wait_bits = 0;
-    // Wait for all thread to quit
-    if (render->adec_res && render->adec_res->thread_res.thread) {
-        wait_bits |= render->adec_res->thread_res.wait_bits;
-        send_msg_to_thread(&render->adec_res->thread_res, sizeof(av_render_audio_data_t), &msg);
-    }
-    if (render->vdec_res && render->vdec_res->thread_res.thread) {
-        wait_bits |= render->vdec_res->thread_res.wait_bits;
-        send_msg_to_thread(&render->vdec_res->thread_res, sizeof(av_render_video_data_t), &msg);
-    }
-    if (render->a_render_res && render->a_render_res->thread_res.thread) {
-        wait_bits |= render->a_render_res->thread_res.wait_bits;
-        send_msg_to_thread(&render->a_render_res->thread_res, sizeof(av_render_audio_frame_t), &msg);
-    }
-    if (render->v_render_res && render->v_render_res->thread_res.thread) {
-        wait_bits |= render->v_render_res->thread_res.wait_bits;
-        send_msg_to_thread(&render->v_render_res->thread_res, sizeof(av_render_video_frame_t), &msg);
-    }
-
-    if (render->adec_res && render->adec_res->thread_res.thread) {
-        wait_bits |= render->adec_res->thread_res.wait_bits;
-    }
-    if (wait_bits) {
+    int recv_bits = 0;
+    // Wait for all thread to quit, run 2 times to avoid render thread creating during closing
+    for (int i = 0; i < 2; i++) {
+        int wait_bits = 0;
+        if (render->adec_res && render->adec_res->thread_res.thread) {
+            if ((recv_bits & render->adec_res->thread_res.wait_bits) == 0) {
+                wait_bits |= render->adec_res->thread_res.wait_bits;
+                send_msg_to_thread(&render->adec_res->thread_res, sizeof(av_render_audio_data_t), &msg);
+            }
+        }
+        if (render->vdec_res && render->vdec_res->thread_res.thread) {
+            if ((recv_bits & render->vdec_res->thread_res.wait_bits) == 0) {
+                wait_bits |= render->vdec_res->thread_res.wait_bits;
+                send_msg_to_thread(&render->vdec_res->thread_res, sizeof(av_render_video_data_t), &msg);
+            }
+        }
+        if (render->a_render_res && render->a_render_res->thread_res.thread) {
+            if ((recv_bits & render->a_render_res->thread_res.wait_bits) == 0) {
+                wait_bits |= render->a_render_res->thread_res.wait_bits;
+                send_msg_to_thread(&render->a_render_res->thread_res, sizeof(av_render_audio_frame_t), &msg);
+            }
+        }
+        if (render->v_render_res && render->v_render_res->thread_res.thread) {
+            if ((recv_bits & render->v_render_res->thread_res.wait_bits) == 0) {
+                wait_bits |= render->v_render_res->thread_res.wait_bits;
+                send_msg_to_thread(&render->v_render_res->thread_res, sizeof(av_render_video_frame_t), &msg);
+            }
+        }
+        if (wait_bits == 0) {
+            break;
+        }
         media_lib_event_group_wait_bits(render->event_group, wait_bits, MEDIA_LIB_MAX_LOCK_TIME);
         media_lib_event_group_clr_bits(render->event_group, wait_bits);
+        recv_bits |= wait_bits;
     }
     ESP_LOGI(TAG, "Close done");
     dump_data(AV_RENDER_DUMP_STOP_INDEX, NULL, 0);
