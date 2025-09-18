@@ -348,7 +348,6 @@ int data_queue_read_lock(data_queue_t *q, void **buffer, int *size)
         if (data_size < 0 || data_size >q->size) {
             *(int*)0 = 0;
         }
-        q->filled -= data_size;
         *buffer = data_buffer + DATA_Q_ALLOC_HEAD_SIZE;
         *size = data_size - DATA_Q_ALLOC_HEAD_SIZE;
         q->user++;
@@ -383,6 +382,7 @@ int data_queue_read_unlock(data_queue_t *q)
                 *(int*)0 = 0;
             }
             q->rp += size;
+            q->filled -= size;
             if (q->fill_end && q->rp >= q->fill_end) {
                 q->fill_end = 0;
                 q->rp = 0;
