@@ -191,7 +191,8 @@ static void add_class(class_t *cls)
     if (classes == NULL) {
         classes = cls;
     } else {
-        classes->next = cls;
+        cls->next = classes;
+        classes = cls;
     }
 }
 
