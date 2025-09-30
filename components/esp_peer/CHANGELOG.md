@@ -7,6 +7,7 @@
 - Added `msid` support in SDP
 - Fixed padding issue of TURN server relay packet
 - Fixed race condition for SCTP reference count
+- Fixed wrong fingerprint error log output
 
 ### Features
 
