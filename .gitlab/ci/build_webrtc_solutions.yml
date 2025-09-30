@@ -2,7 +2,7 @@
   stage: build
   tags:
     - build
-  image: espressif/idf:latest
+  image: espressif/idf:release-v5.5
   variables:
     # Enable ccache for all build jobs. See configure_ci_environment.sh for more ccache related settings.
     IDF_CCACHE_ENABLE: "1"

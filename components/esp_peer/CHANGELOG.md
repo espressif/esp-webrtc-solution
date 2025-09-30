@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.2.6
+
+### Bug Fixes
+
+- Added `msid` support in SDP
+- Fixed padding issue of TURN server relay packet
+- Fixed race condition for SCTP reference count
+
+### Features
+
+- Added esp32c5 support
+
 ## v1.2.5
 
 ### Bug Fixes
