@@ -478,6 +478,7 @@ static int fill_camera_cfg(board_cfg_attr_t *attr)
     }
     camera_cfg->pwr = -1;
     camera_cfg->reset = -1;
+    camera_cfg->xclk = -1;
     while (attr) {
         if (str_same(attr->attr, "type")) {
             camera_cfg->type = get_camera_type(attr->value);

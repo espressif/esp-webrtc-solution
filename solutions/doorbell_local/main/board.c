@@ -23,5 +23,8 @@ void init_board()
     set_codec_board_type(TEST_BOARD_NAME);
     // Notes when use playback and record at same time, must set reuse_dev = false
     codec_init_cfg_t cfg = {.reuse_dev = false};
+    if (strcmp(TEST_BOARD_NAME, "ESP32_P4_EYE") == 0) {
+        cfg.in_mode = CODEC_I2S_MODE_PDM;
+    }
     init_codec(&cfg);
 }
