@@ -74,6 +74,17 @@ static esp_capture_video_src_if_t *create_video_source(void)
         csi_config.pwdn_pin = cam_pin_cfg.pwr;
         ESP_LOGI(TAG, "Use i2c handle %p", csi_config.sccb_config.i2c_handle);
         cam_config.csi = &csi_config;
+        if (cam_pin_cfg.xclk != -1) {
+            esp_cam_sensor_xclk_handle_t xclk_handle = NULL;
+            esp_cam_sensor_xclk_config_t xclk_config = {
+                .esp_clock_router_cfg = {
+                    .xclk_pin = cam_pin_cfg.xclk,
+                    .xclk_freq_hz = 24000000,
+                }
+            };
+            ESP_ERROR_CHECK(esp_cam_sensor_xclk_allocate(ESP_CAM_SENSOR_XCLK_ESP_CLOCK_ROUTER, &xclk_handle));
+            ESP_ERROR_CHECK(esp_cam_sensor_xclk_start(xclk_handle, &xclk_config));
+        }
     } else if (cam_pin_cfg.type == CAMERA_TYPE_DVP) {
         dvp_config.reset_pin = cam_pin_cfg.reset;
         dvp_config.pwdn_pin = cam_pin_cfg.pwr;

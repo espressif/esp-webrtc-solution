@@ -117,3 +117,17 @@ i2c: {sda: 40, scl: 39}
 i2s: {mclk: -1, bclk: 42, din: 41, dout: -1}
 in: {codec: DUMMY}
 camera: {type: dvp, xclk: 10, pclk: 13, vsync: 38, href: 47, d0: 15, d1: 17, d2: 18, d3: 16, d4: 14, d5: 12, d6: 11, d7: 48}
+
+Board: ESP32_P4_EYE
+i2c: {sda: 14, scl: 13}
+i2s: {mclk: -1, bclk: 22, ws: -1, dout: -1, din: 21}
+in: {codec: DUMMY}
+sdcard: {clk: 43, cmd: 44, d0: 39, d1: 40, d2: 41, d3: 42}
+camera: {type: mipi, xclk: 11, pwr: 12, reset: 26}
+lcd: {
+    bus: spi, extend_io: tca9554, controller: st7789, spi_bus: 2,
+    mirror_x: 1, mirror_y: 1, swap_xy: 0, color_inv: 0,
+    width: 240, height: 240,
+    ctrl: -1, rst: 15,
+    cs: 18, dc: 19, clk: 17, mosi: 16, cmd_bits: 8, param_bits: 8
+}
