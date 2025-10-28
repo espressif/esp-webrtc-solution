@@ -298,6 +298,40 @@ int esp_webrtc_stop(esp_webrtc_handle_t rtc_handle);
  */
 int esp_webrtc_close(esp_webrtc_handle_t rtc_handle);
 
+/**
+ * @brief  Set video bitrate for encoder
+ *
+ * @note   This can be called before or after WebRTC starts. If called before start,
+ *         the bitrate will be applied when the capture sink is created.
+ *         If called during streaming, the bitrate is updated immediately without restart.
+ *
+ * @param[in]  rtc_handle  WebRTC handle
+ * @param[in]  bps         Target bitrate in bits per second (e.g., 700000 for 700 kbps)
+ *
+ * @return
+ *      - 0                         On success
+ *      - ESP_PEER_ERR_INVALID_ARG  Invalid argument
+ *      - Others                    Error from capture sink
+ */
+int esp_webrtc_set_video_bitrate(esp_webrtc_handle_t rtc_handle, uint32_t bps);
+
+/**
+ * @brief  Set audio bitrate for encoder
+ *
+ * @note   This can be called before or after WebRTC starts. If called before start,
+ *         the bitrate will be applied when the capture sink is created.
+ *         If called during streaming, the bitrate is updated immediately without restart.
+ *
+ * @param[in]  rtc_handle  WebRTC handle
+ * @param[in]  bps         Target bitrate in bits per second (e.g., 64000 for 64 kbps)
+ *
+ * @return
+ *      - 0                         On success
+ *      - ESP_PEER_ERR_INVALID_ARG  Invalid argument
+ *      - Others                    Error from capture sink
+ */
+int esp_webrtc_set_audio_bitrate(esp_webrtc_handle_t rtc_handle, uint32_t bps);
+
 #ifdef __cplusplus
 }
 #endif
