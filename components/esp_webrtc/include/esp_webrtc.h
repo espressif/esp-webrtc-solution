@@ -228,6 +228,32 @@ int esp_webrtc_set_event_handler(esp_webrtc_handle_t rtc_handle, esp_webrtc_even
 int esp_webrtc_enable_peer_connection(esp_webrtc_handle_t rtc_handle, bool enable);
 
 /**
+ * @brief  Set audio capture bitrate (specially for audio encoder)
+ *
+ * @param[in]  rtc_handle  WebRTC handle
+ * @param[in]  bitrate     Audio bitrate to set
+ *
+ * @return
+ *      - ESP_PEER_ERR_NONE         On success
+ *      - ESP_PEER_ERR_INVALID_ARG  Invalid argument
+ *      - Others                    Fail to set
+ */
+int esp_webrtc_set_video_bitrate(esp_webrtc_handle_t rtc_handle, uint32_t bitrate);
+
+/**
+ * @brief  Set video capture bitrate (specially for video encoder)
+ *
+ * @param[in]  rtc_handle  WebRTC handle
+ * @param[in]  bitrate     Video bitrate to set
+ *
+ * @return
+ *      - ESP_PEER_ERR_NONE         On success
+ *      - ESP_PEER_ERR_INVALID_ARG  Invalid argument
+ *      - Others                    Fail to set
+ */
+int esp_webrtc_set_audio_bitrate(esp_webrtc_handle_t rtc_handle, uint32_t bitrate);
+
+/**
  * @brief  Start WebRTC
  *
  * @param[in]  rtc_handle  WebRTC handle
