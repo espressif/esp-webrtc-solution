@@ -57,6 +57,18 @@
     media_lib_event_group_wait_bits(rtc->wait_event, bit, MEDIA_LIB_MAX_LOCK_TIME); \
     media_lib_event_group_clr_bits(rtc->wait_event, bit)
 
+typedef enum {
+    WEBRTC_PRE_SETTING_MASK_AUDIO_BITRATE = (1 << 0),
+    WEBRTC_PRE_SETTING_MASK_VIDEO_BITRATE = (1 << 1),
+    WEBRTC_PRE_SETTING_MASK_ALL           = 0xFF,
+} webrtc_pre_setting_mask_t;
+
+typedef struct {
+    uint32_t audio_bitrate;
+    uint32_t video_bitrate;
+    uint16_t preset_mask;
+} webrtc_pre_setting_t;
+
 typedef struct {
     esp_webrtc_cfg_t             rtc_cfg;
     esp_peer_handle_t            pc;
@@ -82,6 +94,7 @@ typedef struct {
     bool                          ice_info_loaded;
     bool                          signaling_connected;
     bool                          no_auto_capture;
+    webrtc_pre_setting_t          pre_setting;
 
     uint8_t *aud_fifo;
     uint32_t aud_fifo_size;
@@ -528,6 +541,22 @@ static int pc_on_channel_close(esp_peer_data_channel_info_t *ch, void *ctx)
     return 0;
 }
 
+static int pc_apply_capture_pre_setting(webrtc_t *rtc, uint16_t set_mask)
+{
+    if (rtc->capture_path == NULL) {
+        return ESP_PEER_ERR_NONE;
+    }
+    int ret = ESP_PEER_ERR_NONE;
+    // TODO we not clear in case stop and start again can use pre-setting also
+    if (rtc->pre_setting.preset_mask & (set_mask & WEBRTC_PRE_SETTING_MASK_AUDIO_BITRATE)) {
+        ret |= esp_capture_sink_set_bitrate(rtc->capture_path, ESP_CAPTURE_STREAM_TYPE_AUDIO, rtc->pre_setting.audio_bitrate);
+    }
+    if (rtc->pre_setting.preset_mask & (set_mask & WEBRTC_PRE_SETTING_MASK_VIDEO_BITRATE)) {
+        ret |= esp_capture_sink_set_bitrate(rtc->capture_path, ESP_CAPTURE_STREAM_TYPE_VIDEO, rtc->pre_setting.video_bitrate);
+    }
+    return ret;
+}
+
 static int pc_start(webrtc_t *rtc, esp_peer_ice_server_cfg_t *server_info, int server_num)
 {
     if (rtc->pc) {
@@ -597,6 +626,7 @@ static int pc_start(webrtc_t *rtc, esp_peer_ice_server_cfg_t *server_info, int s
         sink_cfg.video_info.format_id = ESP_CAPTURE_FMT_ID_NONE;
     }
     esp_capture_sink_setup(rtc->media_provider.capture, 0, &sink_cfg, &rtc->capture_path);
+    pc_apply_capture_pre_setting(rtc, WEBRTC_PRE_SETTING_MASK_ALL);
     esp_capture_sink_enable(rtc->capture_path, ESP_CAPTURE_RUN_MODE_ALWAYS);
     return ret;
 }
@@ -803,6 +833,28 @@ int esp_webrtc_set_no_auto_capture(esp_webrtc_handle_t handle, bool no_auto_capt
     webrtc_t *rtc = (webrtc_t *)handle;
     rtc->no_auto_capture = no_auto_capture;
     return ESP_PEER_ERR_NONE;
+}
+
+int esp_webrtc_set_audio_bitrate(esp_webrtc_handle_t rtc_handle, uint32_t bitrate)
+{
+    if (rtc_handle == NULL) {
+        return ESP_PEER_ERR_INVALID_ARG;
+    }
+    webrtc_t *rtc = (webrtc_t *)rtc_handle;
+    rtc->pre_setting.audio_bitrate = bitrate;
+    rtc->pre_setting.preset_mask |= WEBRTC_PRE_SETTING_MASK_AUDIO_BITRATE;
+    return pc_apply_capture_pre_setting(rtc, WEBRTC_PRE_SETTING_MASK_AUDIO_BITRATE);
+}
+
+int esp_webrtc_set_video_bitrate(esp_webrtc_handle_t rtc_handle, uint32_t bitrate)
+{
+    if (rtc_handle == NULL) {
+        return ESP_PEER_ERR_INVALID_ARG;
+    }
+    webrtc_t *rtc = (webrtc_t *)rtc_handle;
+    rtc->pre_setting.video_bitrate = bitrate;
+    rtc->pre_setting.preset_mask |= WEBRTC_PRE_SETTING_MASK_VIDEO_BITRATE;
+    return pc_apply_capture_pre_setting(rtc, WEBRTC_PRE_SETTING_MASK_VIDEO_BITRATE);
 }
 
 int esp_webrtc_start(esp_webrtc_handle_t handle)
