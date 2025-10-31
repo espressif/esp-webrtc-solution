@@ -1,5 +1,5 @@
 ## IDF Component Manager Manifest File
-version: "1.0.1"
+version: "1.0.2"
 description: Simple ESP32 series codec board realization
 dependencies:
   espressif/esp_codec_dev: "~1.5"

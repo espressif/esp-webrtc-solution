@@ -258,9 +258,9 @@ static lcd_bus_type_t lcd_get_bus(const char* s)
 
 static int16_t get_pin(const char* s)
 {
-    char* ext = strstr(s, "ext");
-    if (ext) {
-        return 0x1000 + atoi(ext + 3);
+    bool has_ext = (strncmp(s, "ext", 3) == 0);
+    if (has_ext) {
+        return 0x1000 + atoi(s + 3);
     }
     return (int16_t)atoi(s);
 }
