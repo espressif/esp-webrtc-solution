@@ -35,3 +35,6 @@ This demo sets up a local doorbell application that operates without external si
 An ESP32 series board acts as the signaling server, allowing users to connect directly for WebRTC testing.  
 Meanwhile provide AI pedestrian detect capability in realtime. 
 
+### 7. Kurento Media Server Publish Demo
+A complete example showing how ESP32 acts as a WebRTC publisher to stream video/audio to Kurento Media Server.  
+Meanwhile provides a browser client for viewing the published stream in realtime.
