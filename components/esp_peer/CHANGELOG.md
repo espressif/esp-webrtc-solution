@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.2.7
+
+### Bug Fixes
+
+- Fixed un-reliable data channel forward TSN not send when limit with 0 setting
+- Fixed DTLS role not follow sdp answer
+
+
 ## v1.2.6
 
 ### Bug Fixes
