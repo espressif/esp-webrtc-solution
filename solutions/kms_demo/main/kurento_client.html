@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kurento WebRTC Client - ESP32 Communication</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 30px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .config-section {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .config-section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus, input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #c0392b;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(231, 76, 60, 0.4);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .status-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .status-item:last-child {
+            border-bottom: none;
+        }
+
+        .status-label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .status-value {
+            color: #333;
+        }
+
+        .status-connected {
+            color: #27ae60;
+            font-weight: 600;
+        }
+
+        .status-disconnected {
+            color: #e74c3c;
+            font-weight: 600;
+        }
+
+        .status-connecting {
+            color: #f39c12;
+            font-weight: 600;
+        }
+
+        .video-section {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .video-container {
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            aspect-ratio: 16/9;
+        }
+
+        .video-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .video-label {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+
+        .log-section {
+            margin-top: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px 0;
+        }
+
+        .log-info { color: #4ec9b0; }
+        .log-success { color: #4ec9b0; }
+        .log-error { color: #f48771; }
+        .log-warn { color: #dcdcaa; }
+
+        @media (max-width: 768px) {
+            .video-section {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 Kurento WebRTC Client</h1>
+        <p class="subtitle">Connect to ESP32 via Kurento Media Server</p>
+
+        <div class="config-section">
+            <h2>⚙️ Configuration</h2>
+            <div class="form-group">
+                <label for="kurentoUrl">Kurento WebSocket URL:</label>
+                <input type="text" id="kurentoUrl" value="ws://XXXXXX:8888/kurento" placeholder="ws://server:port/kurento">
+                <small style="color: #666; font-size: 12px; display: block; margin-top: 5px;">
+                    <strong>Docker Note:</strong> If Kurento is running in Docker, make sure:<br>
+                    • Port mapping: <code>-p 8888:8888/tcp</code><br>
+                    • Kurento binds to <code>0.0.0.0</code> (not <code>127.0.0.1</code>)<br>
+                    • For network access, use your machine's IP (e.g., <code>ws://XXXXXX:8888/kurento</code>)
+                </small>
+            </div>
+            <div class="form-group">
+                <label for="stunServer">STUN Server (optional):</label>
+                <input type="text" id="stunServer" value="stun:stun.l.google.com:19302" placeholder="stun:server:port">
+            </div>
+            <div class="form-group">
+                <label for="esp32EndpointId">ESP32 Browser Endpoint ID (endpoint2, NOT endpoint1):</label>
+                <input type="text" id="esp32EndpointId" placeholder="Enter ESP32's browser endpoint ID (endpoint2)">
+                <small style="color: #e74c3c; font-size: 12px; display: block; margin-top: 5px; font-weight: bold;">
+                    <strong>⚠️ CRITICAL REQUIREMENT:</strong><br>
+                    ESP32 MUST create a SECOND endpoint (endpoint2) for the browser!<br>
+                    <strong>❌ DO NOT USE:</strong> ESP32's own endpoint (endpoint1) - it's already negotiated<br>
+                    <strong>✅ USE:</strong> Browser endpoint (endpoint2) created by ESP32 in same pipeline<br>
+                    <strong>ESP32 must:</strong> Create endpoint2 → Connect endpoint1→endpoint2 → Log endpoint2 ID
+                </small>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="receiveOnly" checked>
+                    Receive Only (no camera/microphone needed)
+                </label>
+            </div>
+            <div class="button-group">
+                <button id="connectBtn" class="btn-primary" onclick="connect()">Connect</button>
+                <button id="disconnectBtn" class="btn-danger" onclick="disconnect()" disabled>Disconnect</button>
+            </div>
+        </div>
+
+        <div class="status-section">
+            <h2>📊 Connection Status</h2>
+            <div class="status-item">
+                <span class="status-label">WebSocket:</span>
+                <span id="wsStatus" class="status-value status-disconnected">Disconnected</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">WebRTC:</span>
+                <span id="webrtcStatus" class="status-value status-disconnected">Disconnected</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">ICE Connection:</span>
+                <span id="iceStatus" class="status-value">-</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Signaling State:</span>
+                <span id="signalingStatus" class="status-value">-</span>
+            </div>
+        </div>
+
+        <div class="video-section">
+            <div class="video-container">
+                <div class="video-label">Local Video (You)</div>
+                <video id="localVideo" autoplay muted playsinline></video>
+            </div>
+            <div class="video-container">
+                <div class="video-label">Remote Video (ESP32)</div>
+                <video id="remoteVideo" autoplay playsinline></video>
+            </div>
+        </div>
+
+        <div class="log-section" id="logSection"></div>
+    </div>
+
+    <script>
+        // Configuration
+        let ws = null;
+        let pc = null;
+        let localStream = null;
+        let requestId = 1;
+        let pipelineId = null;
+        let webRtcEndpointId = null;
+        let esp32EndpointId = null;
+        let receiveOnly = false;
+
+        // DOM elements
+        const kurentoUrlInput = document.getElementById('kurentoUrl');
+        const stunServerInput = document.getElementById('stunServer');
+        const esp32EndpointIdInput = document.getElementById('esp32EndpointId');
+        const receiveOnlyCheckbox = document.getElementById('receiveOnly');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const localVideo = document.getElementById('localVideo');
+        const remoteVideo = document.getElementById('remoteVideo');
+        const wsStatus = document.getElementById('wsStatus');
+        const webrtcStatus = document.getElementById('webrtcStatus');
+        const iceStatus = document.getElementById('iceStatus');
+        const signalingStatus = document.getElementById('signalingStatus');
+        const logSection = document.getElementById('logSection');
+
+        // Logging functions
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logSection.appendChild(logEntry);
+            logSection.scrollTop = logSection.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        // Update status display
+        function updateStatus(element, text, className = '') {
+            element.textContent = text;
+            element.className = `status-value ${className}`;
+        }
+
+        // Send JSON-RPC message to Kurento
+        function sendJsonRpc(method, params, callback) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('WebSocket not connected', 'error');
+                return;
+            }
+
+            const messageId = requestId++;
+            const message = {
+                jsonrpc: '2.0',
+                id: messageId,
+                method: method,
+                params: params || {}
+            };
+
+            // Store callback before sending
+            if (callback) {
+                ws.pendingCallbacks = ws.pendingCallbacks || {};
+                ws.pendingCallbacks[messageId] = callback;
+            }
+
+            try {
+                ws.send(JSON.stringify(message));
+            } catch (error) {
+                log(`Error sending message: ${error.message}`, 'error');
+                if (callback && ws.pendingCallbacks) {
+                    delete ws.pendingCallbacks[messageId];
+                }
+            }
+        }
+
+        // Handle WebSocket messages
+        function handleWebSocketMessage(event) {
+            try {
+                const message = JSON.parse(event.data);
+                const hasId = message.id !== undefined && message.id !== null;
+
+                // First priority: Handle JSON-RPC response with callback (has ID)
+                if (hasId && ws.pendingCallbacks && ws.pendingCallbacks[message.id]) {
+                    const callback = ws.pendingCallbacks[message.id];
+                    delete ws.pendingCallbacks[message.id];
+                    callback(message);
+                    return;
+                }
+
+                // Handle errors
+                if (message.error) {
+                    log(`❌ Kurento error (ID: ${message.id}): ${JSON.stringify(message.error)}`, 'error');
+                    if (hasId && ws.pendingCallbacks && ws.pendingCallbacks[message.id]) {
+                        const callback = ws.pendingCallbacks[message.id];
+                        delete ws.pendingCallbacks[message.id];
+                        callback(message);
+                    }
+                    return;
+                }
+
+                // Handle events (notifications) - these don't have IDs or have method "onEvent"
+                if (message.method === 'onEvent') {
+                    handleKurentoEvent(message);
+                    return;
+                }
+
+                // Check for events without ID (notifications)
+                if (!hasId && (message.params || message.method)) {
+                    handleKurentoEvent(message);
+                    return;
+                }
+
+                // Handle results without callback (fallback processing)
+                if (message.result) {
+                    handleKurentoResult(message);
+                }
+            } catch (error) {
+                log(`❌ Error parsing message: ${error.message}`, 'error');
+            }
+        }
+
+        // Handle Kurento events
+        function handleKurentoEvent(message) {
+            let event = null;
+            if (message.method === 'onEvent' && message.params) {
+                event = message.params.value || message.params;
+            } else if (message.params) {
+                event = message.params;
+            } else {
+                event = message;
+            }
+
+            if (!event || event.type !== 'IceCandidateFound') {
+                return;
+            }
+
+            // Extract ICE candidate from event
+            let candidateStr = null;
+            let sdpMid = '0';
+            let sdpMLineIndex = 0;
+
+            if (event.data && event.data.candidate) {
+                if (typeof event.data.candidate === 'string') {
+                    candidateStr = event.data.candidate;
+                } else if (event.data.candidate.candidate) {
+                    candidateStr = event.data.candidate.candidate;
+                }
+                sdpMid = event.data.sdpMid || '0';
+                sdpMLineIndex = event.data.sdpMLineIndex !== undefined ? event.data.sdpMLineIndex : 0;
+            } else if (event.candidate) {
+                if (typeof event.candidate === 'string') {
+                    candidateStr = event.candidate;
+                } else if (event.candidate.candidate) {
+                    candidateStr = event.candidate.candidate;
+                    sdpMid = event.candidate.sdpMid || '0';
+                    sdpMLineIndex = event.candidate.sdpMLineIndex || 0;
+                }
+            } else if (event.data && typeof event.data === 'string') {
+                candidateStr = event.data;
+            }
+
+            if (candidateStr && pc) {
+                try {
+                    const iceCandidate = new RTCIceCandidate({
+                        candidate: candidateStr,
+                        sdpMLineIndex: sdpMLineIndex,
+                        sdpMid: sdpMid
+                    });
+                    pc.addIceCandidate(iceCandidate).catch(err => {
+                        log(`❌ Error adding ICE candidate: ${err.message}`, 'error');
+                    });
+                } catch (err) {
+                    log(`❌ Error creating ICE candidate: ${err.message}`, 'error');
+                }
+            }
+        }
+
+        // Handle Kurento results
+        function handleKurentoResult(message) {
+            if (!message.result) {
+                return;
+            }
+
+            const value = message.result.value;
+
+            // Handle based on value type
+            if (typeof value === 'string') {
+                if (value.includes('pipeline') || value.startsWith('pipeline')) {
+                    if (!pipelineId) {
+                        pipelineId = value;
+                        log(`Pipeline created: ${pipelineId}`, 'success');
+                        createWebRtcEndpoint();
+                    }
+                } else if (value.includes('endpoint') || value.startsWith('endpoint') || value.includes('WebRtcEndpoint')) {
+                    if (!webRtcEndpointId) {
+                        webRtcEndpointId = value;
+                        log(`WebRTC endpoint created: ${webRtcEndpointId}`, 'success');
+                        subscribeToIceCandidates();
+                        setTimeout(() => {
+                            if (pc && !pc.localDescription) {
+                                createOffer();
+                            } else if (pc && pc.localDescription) {
+                                processOffer();
+                            }
+                        }, 100);
+                    }
+                } else if (value.includes('v=') || value.includes('m=') || value.includes('o=')) {
+                    // This is an SDP answer
+                    log('Received SDP answer from Kurento', 'success');
+                    handleSdpAnswer(value);
+                }
+            }
+        }
+
+        function createMediaPipeline() {
+            if (esp32EndpointId) {
+                log(`Using ESP32 endpoint: ${esp32EndpointId}`, 'info');
+                pipelineId = 'esp32_pipeline';
+                webRtcEndpointId = esp32EndpointId;
+                subscribeToIceCandidates();
+                setTimeout(() => {
+                    createOffer();
+                }, 200);
+                return;
+            }
+
+            sendJsonRpc('create', {
+                type: 'MediaPipeline',
+                sessionId: 'default'
+            }, (response) => {
+                if (response.error) {
+                    log(`Error creating pipeline: ${JSON.stringify(response.error)}`, 'error');
+                    return;
+                }
+
+                if (response.result && response.result.value) {
+                    pipelineId = response.result.value;
+                    log(`Pipeline created: ${pipelineId}`, 'success');
+                    setTimeout(() => {
+                        createWebRtcEndpoint();
+                    }, 100);
+                } else {
+                    log('Pipeline creation failed: missing result.value', 'error');
+                }
+            });
+        }
+
+        // Create WebRtcEndpoint
+        function createWebRtcEndpoint() {
+            if (!pipelineId) {
+                log('Pipeline not created yet', 'error');
+                return;
+            }
+
+            sendJsonRpc('invoke', {
+                object: pipelineId,
+                operation: 'createWebRtcEndpoint',
+                operationParams: {
+                    mediaProfile: 'WEBRTC'
+                }
+            }, (response) => {
+                if (response.error) {
+                    log(`Error creating endpoint: ${JSON.stringify(response.error)}`, 'error');
+                    // Try alternative method
+                    createWebRtcEndpointAlternative();
+                    return;
+                }
+
+                if (response.result && response.result.value) {
+                    webRtcEndpointId = response.result.value;
+                    log(`WebRTC endpoint created: ${webRtcEndpointId}`, 'success');
+                    subscribeToIceCandidates();
+                    if (!esp32EndpointId) {
+                        setTimeout(() => {
+                            createOffer();
+                        }, 200);
+                    }
+                } else {
+                    log('Endpoint creation failed: missing result.value', 'error');
+                }
+            });
+        }
+
+        // Alternative method to create WebRtcEndpoint
+        function createWebRtcEndpointAlternative() {
+            sendJsonRpc('create', {
+                type: 'WebRtcEndpoint',
+                constructorParams: {
+                    mediaPipeline: pipelineId
+                }
+            }, (response) => {
+                if (response.error) {
+                    log(`Error with alternative method: ${JSON.stringify(response.error)}`, 'error');
+                    return;
+                }
+
+                if (response.result && response.result.value) {
+                    webRtcEndpointId = response.result.value;
+                    log(`WebRTC endpoint created: ${webRtcEndpointId}`, 'success');
+                    subscribeToIceCandidates();
+                    setTimeout(() => {
+                        createOffer();
+                    }, 200);
+                }
+            });
+        }
+
+        // Subscribe to ICE candidate events
+        function subscribeToIceCandidates() {
+            if (!webRtcEndpointId) {
+                return;
+            }
+
+            sendJsonRpc('invoke', {
+                object: webRtcEndpointId,
+                operation: 'subscribe',
+                operationParams: {
+                    type: 'IceCandidateFound'
+                }
+            }, (response) => {
+                if (response.error) {
+                    // Try alternative subscribe method
+                    sendJsonRpc('subscribe', {
+                        type: 'IceCandidateFound',
+                        object: webRtcEndpointId
+                    }, (response2) => {
+                        if (response2.error) {
+                            log(`Error subscribing to ICE events: ${JSON.stringify(response2.error)}`, 'error');
+                        }
+                    });
+                }
+            });
+        }
+
+        function processOffer() {
+            if (!pc || !pc.localDescription) {
+                log('Cannot process offer: missing requirements', 'error');
+                return;
+            }
+
+            const offer = pc.localDescription.sdp;
+            const targetEndpointId = esp32EndpointId || webRtcEndpointId;
+
+            sendJsonRpc('invoke', {
+                object: targetEndpointId,
+                operation: 'processOffer',
+                operationParams: {
+                    offer: offer
+                }
+            }, (response) => {
+                if (response.error) {
+                    log(`Error processing offer: ${JSON.stringify(response.error)}`, 'error');
+
+                    if (response.error.code === 40101) {
+                        log('Endpoint not found - check endpoint ID from ESP32 logs', 'error');
+                    } else if (response.error.code === 40208) {
+                        log('Endpoint already negotiated - ESP32 will recreate it', 'error');
+                        esp32EndpointId = '';
+                        document.getElementById('esp32EndpointId').value = '';
+                    }
+                    return;
+                }
+
+                if (response.result && response.result.value) {
+                    const answer = response.result.value;
+                    log('Received SDP answer', 'success');
+                    handleSdpAnswer(answer);
+
+                    setTimeout(() => {
+                        sendJsonRpc('invoke', {
+                            object: targetEndpointId,
+                            operation: 'gatherCandidates',
+                            operationParams: {}
+                        }, (gatherResponse) => {
+                            if (gatherResponse.error) {
+                                log(`Error gathering candidates: ${JSON.stringify(gatherResponse.error)}`, 'error');
+                            }
+                        });
+                    }, 500);
+                }
+            });
+        }
+
+        // Handle SDP answer
+        async function handleSdpAnswer(sdpAnswer) {
+            try {
+                const answer = new RTCSessionDescription({
+                    type: 'answer',
+                    sdp: sdpAnswer
+                });
+
+                await pc.setRemoteDescription(answer);
+                log('Set remote description (answer)', 'success');
+                updateStatus(signalingStatus, pc.signalingState);
+
+                if (webRtcEndpointId) {
+                    setTimeout(() => {
+                        subscribeToIceCandidates();
+                        sendJsonRpc('invoke', {
+                            object: webRtcEndpointId,
+                            operation: 'gatherCandidates',
+                            operationParams: {}
+                        }, (gatherResponse) => {
+                            if (gatherResponse.error) {
+                                log(`Error gathering candidates: ${JSON.stringify(gatherResponse.error)}`, 'error');
+                            }
+                        });
+                    }, 500);
+                }
+            } catch (error) {
+                log(`Error setting remote description: ${error.message}`, 'error');
+            }
+        }
+
+        // Create WebRTC peer connection
+        function createPeerConnection() {
+            const config = {
+                iceServers: [
+                    {
+                        urls: stunServerInput.value || 'stun:stun.l.google.com:19302'
+                    }
+                ]
+            };
+
+            pc = new RTCPeerConnection(config);
+            log('Created RTCPeerConnection', 'success');
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate && webRtcEndpointId) {
+                    sendJsonRpc('invoke', {
+                        object: webRtcEndpointId,
+                        operation: 'addIceCandidate',
+                        operationParams: {
+                            candidate: {
+                                candidate: event.candidate.candidate,
+                                sdpMid: event.candidate.sdpMid || '0',
+                                sdpMLineIndex: event.candidate.sdpMLineIndex || 0
+                            }
+                        }
+                    }, (response) => {
+                        if (response.error) {
+                            log(`Error adding ICE candidate: ${JSON.stringify(response.error)}`, 'error');
+                        }
+                    });
+                }
+            };
+
+            if (esp32EndpointId) {
+                subscribeToEsp32IceCandidates();
+            }
+
+            pc.onconnectionstatechange = () => {
+                updateStatus(iceStatus, pc.iceConnectionState);
+
+                if (pc.connectionState === 'connected') {
+                    updateStatus(webrtcStatus, 'Connected', 'status-connected');
+                    log('WebRTC connection established', 'success');
+                } else if (pc.connectionState === 'connecting') {
+                    updateStatus(webrtcStatus, 'Connecting...', 'status-connecting');
+                } else if (pc.connectionState === 'disconnected') {
+                    updateStatus(webrtcStatus, 'Disconnected', 'status-disconnected');
+                } else if (pc.connectionState === 'failed') {
+                    updateStatus(webrtcStatus, 'Failed', 'status-disconnected');
+                    log('WebRTC connection failed', 'error');
+                } else if (pc.connectionState === 'closed') {
+                    updateStatus(webrtcStatus, 'Closed', 'status-disconnected');
+                }
+            };
+
+            pc.oniceconnectionstatechange = () => {
+                updateStatus(iceStatus, pc.iceConnectionState);
+
+                if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+                    log('ICE connection established', 'success');
+                } else if (pc.iceConnectionState === 'failed') {
+                    log('ICE connection failed', 'error');
+                }
+            };
+
+            pc.onsignalingstatechange = () => {
+                updateStatus(signalingStatus, pc.signalingState);
+            };
+
+            pc.ontrack = (event) => {
+                log(`Received remote track: ${event.track.kind}`, 'success');
+
+                if (event.streams && event.streams[0]) {
+                    remoteVideo.srcObject = event.streams[0];
+
+                    if (event.track.muted) {
+                        log(`Track muted: ${event.track.kind}`, 'error');
+                    }
+
+                    remoteVideo.play().catch(err => {
+                        log(`Error playing remote video: ${err.message}`, 'error');
+                    });
+                }
+            };
+
+            // Add local stream tracks (only if not receive-only)
+            if (localStream && !receiveOnly) {
+                localStream.getTracks().forEach(track => {
+                    pc.addTrack(track, localStream);
+                });
+            }
+        }
+
+        function subscribeToEsp32IceCandidates() {
+            const targetEndpointId = esp32EndpointId || webRtcEndpointId;
+            if (!targetEndpointId) {
+                return;
+            }
+
+            sendJsonRpc('invoke', {
+                object: targetEndpointId,
+                operation: 'subscribe',
+                operationParams: {
+                    type: 'IceCandidateFound'
+                }
+            }, (response) => {
+                if (response.error) {
+                    sendJsonRpc('subscribe', {
+                        type: 'IceCandidateFound',
+                        object: targetEndpointId
+                    });
+                }
+            });
+        }
+
+        async function getUserMedia() {
+            if (receiveOnly) {
+                return true;
+            }
+
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        frameRate: { ideal: 30 }
+                    },
+                    audio: {
+                        sampleRate: 16000,
+                        channelCount: 2,
+                        echoCancellation: true,
+                        noiseSuppression: true
+                    }
+                });
+
+                localVideo.srcObject = localStream;
+                return true;
+            } catch (error) {
+                log(`Error getting user media: ${error.message}`, 'error');
+                try {
+                    localStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            sampleRate: 16000,
+                            channelCount: 2
+                        }
+                    });
+                    localVideo.srcObject = null;
+                    return true;
+                } catch (err) {
+                    log(`Error getting audio: ${err.message}`, 'error');
+                    return false;
+                }
+            }
+        }
+
+        let connectionTimeout = null;
+
+        async function connect() {
+            const url = kurentoUrlInput.value.trim();
+            if (!url) {
+                log('Please enter Kurento WebSocket URL', 'error');
+                return;
+            }
+
+            try {
+                const esp32EndpointIdValue = esp32EndpointIdInput.value.trim();
+
+                if (esp32EndpointIdValue) {
+                    esp32EndpointId = esp32EndpointIdValue;
+                    receiveOnly = receiveOnlyCheckbox.checked;
+                    log(`Connecting to ESP32 endpoint: ${esp32EndpointId}`, 'info');
+                } else {
+                    esp32EndpointId = null;
+                    receiveOnly = receiveOnlyCheckbox.checked;
+                }
+
+                if (!receiveOnly) {
+                    const gotMedia = await getUserMedia();
+                    if (!gotMedia) {
+                        log('Failed to get user media', 'error');
+                        return;
+                    }
+                }
+
+                log(`Connecting to ${url}...`, 'info');
+                updateStatus(wsStatus, 'Connecting...', 'status-connecting');
+
+                if (ws) {
+                    ws.close();
+                    ws = null;
+                }
+
+                ws = new WebSocket(url);
+                ws.pendingCallbacks = {};
+
+                connectionTimeout = setTimeout(() => {
+                    if (ws && ws.readyState === WebSocket.CONNECTING) {
+                        log('WebSocket connection timeout', 'error');
+                        updateStatus(wsStatus, 'Timeout', 'status-disconnected');
+                        ws.close();
+                        connectBtn.disabled = false;
+                        disconnectBtn.disabled = true;
+                    }
+                }, 10000);
+
+                ws.onopen = (event) => {
+                    if (connectionTimeout) {
+                        clearTimeout(connectionTimeout);
+                        connectionTimeout = null;
+                    }
+                    log('WebSocket connected', 'success');
+                    updateStatus(wsStatus, 'Connected', 'status-connected');
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+
+                    setTimeout(() => {
+                        createPeerConnection();
+                        createMediaPipeline();
+                    }, 100);
+                };
+
+                ws.onmessage = (event) => {
+                    handleWebSocketMessage(event);
+                };
+
+                ws.onerror = (error) => {
+                    if (connectionTimeout) {
+                        clearTimeout(connectionTimeout);
+                        connectionTimeout = null;
+                    }
+                    log('WebSocket error occurred', 'error');
+                    updateStatus(wsStatus, 'Error', 'status-disconnected');
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                };
+
+                ws.onclose = (event) => {
+                    if (connectionTimeout) {
+                        clearTimeout(connectionTimeout);
+                        connectionTimeout = null;
+                    }
+                    updateStatus(wsStatus, 'Disconnected', 'status-disconnected');
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+
+                    if (pc) {
+                        pc.close();
+                        pc = null;
+                    }
+                };
+
+            } catch (error) {
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                    connectionTimeout = null;
+                }
+                log(`Connection error: ${error.message}`, 'error');
+                updateStatus(wsStatus, 'Error', 'status-disconnected');
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            }
+        }
+
+        async function createOffer() {
+            if (!pc) {
+                log('Peer connection not created', 'error');
+                return;
+            }
+
+            try {
+                log('Creating SDP offer...', 'info');
+
+                const offerOptions = {
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: true
+                };
+
+                const offer = await pc.createOffer(offerOptions);
+                await pc.setLocalDescription(offer);
+                log('Set local description (offer)', 'success');
+                updateStatus(signalingStatus, pc.signalingState);
+
+                if (webRtcEndpointId) {
+                    processOffer();
+                }
+            } catch (error) {
+                log(`Error creating offer: ${error.message}`, 'error');
+            }
+        }
+
+        function disconnectEndpoint() {
+            return new Promise((resolve) => {
+                if (!esp32EndpointId && webRtcEndpointId && ws && ws.readyState === WebSocket.OPEN) {
+                    sendJsonRpc('release', {
+                        object: webRtcEndpointId
+                    }, (releaseResponse) => {
+                        resolve();
+                    });
+                } else {
+                    setTimeout(() => {
+                        resolve();
+                    }, 2000);
+                }
+            });
+        }
+
+        async function disconnect() {
+            if (connectionTimeout) {
+                clearTimeout(connectionTimeout);
+                connectionTimeout = null;
+            }
+
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                await disconnectEndpoint();
+            }
+
+            if (ws) {
+                if (pipelineId && !esp32EndpointId) {
+                    sendJsonRpc('release', {
+                        object: pipelineId
+                    });
+                }
+
+                setTimeout(() => {
+                    if (ws) {
+                        ws.close();
+                        ws = null;
+                    }
+                }, 200);
+            }
+
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+
+            localVideo.srcObject = null;
+            remoteVideo.srcObject = null;
+
+            pipelineId = null;
+            webRtcEndpointId = null;
+            esp32EndpointId = null;
+            requestId = 1;
+
+            updateStatus(wsStatus, 'Disconnected', 'status-disconnected');
+            updateStatus(webrtcStatus, 'Disconnected', 'status-disconnected');
+            updateStatus(iceStatus, '-');
+            updateStatus(signalingStatus, '-');
+
+            connectBtn.disabled = false;
+            disconnectBtn.disabled = true;
+        }
+
+        window.addEventListener('beforeunload', (event) => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                disconnectEndpoint();
+            }
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && ws && ws.readyState === WebSocket.OPEN) {
+                disconnect();
+            }
+        });
+    </script>
+</body>
+</html>
