@@ -1,0 +1,61 @@
+menu "Codec Board Configuration"
+
+choice
+    prompt "Selection for codec board"
+    default ESP32_S3_KORVO_V2_BOARD
+    help
+        Select a codec board
+config ESP32_S3_KORVO_V2_BOARD
+    depends on IDF_TARGET_ESP32S3
+    bool "ESP32 S3 Korvo V2"
+config ESP32_S3_KORVO_V4_BOARD
+    depends on IDF_TARGET_ESP32S3
+    bool "ESP32 S3 Korvo V4"
+config ESP32_LYRAT_MINI_V1_BOARD
+    depends on IDF_TARGET_ESP32
+    bool "ESP32 LyraT Mini V1"
+config ESP32_KORVO_V1_BOARD
+    depends on IDF_TARGET_ESP32
+    bool "ESP32 Korvo V1"
+config ESP32_S3_BOX_BOARD
+    depends on IDF_TARGET_ESP32S3
+    bool "ESP32 S3 BOX"
+config ESP32_S3_BOX_3_BOARD
+    depends on IDF_TARGET_ESP32S3
+    bool "ESP32 S3 BOX 3"
+config ESP32_P4_FUNCTION_EV_V14_BOARD
+    depends on IDF_TARGET_ESP32P4
+    bool "ESP32 P4 Function EV V1.4"
+config ESP32_S3_EYE_BOARD
+    depends on IDF_TARGET_ESP32S3
+    bool "ESP32 S3 EYE"
+config XD_AIOT_C3
+    depends on IDF_TARGET_ESP32C3
+    bool "XD AIOT C3"
+config ESP32_S3_KORVO_2L_BOARD
+    depends on IDF_TARGET_ESP32S3
+    bool "ESP32 S3 KORVO 2L"
+config ESP32_S3_ECHOEAR_BOARD
+    depends on IDF_TARGET_ESP32S3
+    bool "ESP32 S3 ECHOEAR"
+config ATOMS3_ECHO_BASE_BOARD
+    depends on IDF_TARGET_ESP32S3
+    bool "ATOMS3 ECHO BASE"
+endchoice
+
+config CODEC_BOARD
+    string
+    default "S3_Korvo_V2" if ESP32_S3_KORVO_V2_BOARD
+    default "S3_Korvo_V4" if ESP32_S3_KORVO_V4_BOARD
+    default "LYRAT_MINI_V1" if ESP32_LYRAT_MINI_V1_BOARD
+    default "ESP32_KORVO_V1" if ESP32_KORVO_V1_BOARD
+    default "ESP32S3_BOX" if ESP32_S3_BOX_BOARD
+    default "ESP32_S3_BOX_3" if ESP32_S3_BOX_3_BOARD
+    default "ESP32_P4_DEV_V14" if ESP32_P4_FUNCTION_EV_V14_BOARD
+    default "ESP32S3_EYE" if ESP32_S3_EYE_BOARD
+    default "XD_AIOT_C3" if XD_AIOT_C3
+    default "ESP32_S3_KORVO_2L" if ESP32_S3_KORVO_2L_BOARD
+    default "ESP32_S3_EchoEar" if ESP32_S3_ECHOEAR_BOARD
+    default "ATOMS3_ECHO_BASE" if ATOMS3_ECHO_BASE_BOARD
+    default "DUMMY_CODEC_BOARD"
+endmenu

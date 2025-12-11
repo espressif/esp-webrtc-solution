@@ -1,3 +1,4 @@
+#include <sdkconfig.h>
 #include "codec_board.h"
 #include "esp_log.h"
 
@@ -27,6 +28,14 @@ void set_codec_board_type(const char *codec_type)
         return;
     }
     codec = get_codec_section(codec_type);
+}
+
+void set_default_codec_board(void)
+{
+    if (codec) {
+        return;
+    }
+    set_codec_board_type(CONFIG_CODEC_BOARD);
 }
 
 int get_sdcard_config(sdcard_cfg_t *card_cfg)
