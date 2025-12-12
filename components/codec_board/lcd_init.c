@@ -281,6 +281,7 @@ static int _init_mipi_lcd(lcd_cfg_t *cfg)
     if (cfg->width == 1024 && cfg->height == 600) {
         ESP_LOGI(TAG, "Install EK79007 LCD control panel");
         esp_lcd_dpi_panel_config_t dpi_config = EK79007_1024_600_PANEL_60HZ_CONFIG(LCD_COLOR_PIXEL_FORMAT_RGB565);
+        dpi_config.num_fbs = mipi_cfg->fb_num;
         ek79007_vendor_config_t vendor_config = {
             .mipi_config = {
                 .dsi_bus = mipi_dsi_bus,

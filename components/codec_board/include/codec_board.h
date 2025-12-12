@@ -281,6 +281,11 @@ int codec_board_parse_all_config(const char *section);
 void set_codec_board_type(const char *board_type);
 
 /**
+ * @brief  Set default codec board
+ */
+void set_default_codec_board(void);
+
+/**
  * @brief  Get SDCard configuration
  *
  * @param[out]  card_cfg  SDCard configuration to store

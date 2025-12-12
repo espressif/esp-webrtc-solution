@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.0.0
+
+- Fixed `fb_num` configuration no take effect
+- Added `Kconfig` to select default board use API `set_default_codec_board`
+
 ## v1.0.2
 
 - Fixed pin parse error
