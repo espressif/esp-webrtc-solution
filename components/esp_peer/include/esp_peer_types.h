@@ -47,6 +47,65 @@ typedef enum {
     ESP_PEER_ROLE_CONTROLLED,  /*!< Controlled role */
 } esp_peer_role_t;
 
+/**
+ * @brief  Peer address
+ */
+typedef struct  {
+    uint8_t     family;   /*!< AF_INET and so on */
+    uint16_t    port;     /*!< IP port */
+    union {
+        uint8_t ipv4[4];  /*!< IPV4 address */
+        uint8_t ipv6[16]; /*!< IPV6 address */
+    };
+} esp_peer_addr_t;
+
+/**
+ * @brief  Peer RTP transform frame
+ */
+typedef struct {
+    uint8_t  *orig_data;     /*!< Original RTP frame data */
+    uint32_t  orig_size;     /*!< Original RTP frame data size */
+    uint8_t  *encoded_data;  /*!< Data after transformed */
+    uint32_t  encoded_size;  /*!< Data size after encoded */
+    uint8_t   payload_type;  /*!< RTP payload type */
+} esp_peer_rtp_frame_t;
+
+/**
+ * @brief  Peer RTP transform callback
+ */
+typedef struct {
+    /**
+     * @brief  Get encoded size after transform
+     *
+     * @note  If transformer not support in place
+     *        `esp_peer` will try to re-allocate memory according the returned `frame->encoded_size`
+     *         and set `frame->encoded_data` accordingly
+     *
+     * @param[in/out]  frame     RTP frame information
+     * @param[out]     in_place  Whether transform in place
+     * @param[in]      ctx       User context
+     *
+     * @return
+     *       - 0                         On success
+     *       - ESP_PEER_ERR_NOT_SUPPORT  Not support transforming (no transform executed)
+     *       - Others                    Failed to get encoded size
+     */
+    int (*get_encoded_size)(esp_peer_rtp_frame_t *frame, bool *in_place, void *ctx);
+
+    /**
+     * @brief  Transform function for RTP frame
+     *
+     * @param[in/out]  frame     RTP frame information
+     * @param[out]     in_place  Whether transform in place
+     * @param[in]      ctx       User context
+     *
+     * @return
+     *       - 0      On success
+     *       - Others Failed to get encoded size
+     */
+    int (*transform)(esp_peer_rtp_frame_t *frame, void *ctx);
+} esp_peer_rtp_transform_cb_t;
+
 #ifdef __cplusplus
 }
 #endif

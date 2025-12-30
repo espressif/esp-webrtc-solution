@@ -82,15 +82,15 @@ typedef struct {
 
     /**
      * @brief  Callback hook for sending video frames (supports modification or SEI injection).
-     * 
+     *
      * @note   This callback is invoked before a video frame is sent, allowing the user to:
      *         - Send the original video data (leave frame->data unchanged)
      *         - Send modified video data (update frame->data; user is responsible for managing the new buffer's lifecycle)
      *         - Drop the frame (do not send)
-     * 
+     *
      * @param[in]  frame  Video frame information before sending
      * @param[in]  ctx    User-defined context
-     * 
+     *
      * @return
      *         - 0        Proceed with sending (using either original or modified data)
      *         - Others   Drop the frame
@@ -123,13 +123,14 @@ typedef struct {
  */
 typedef enum {
     ESP_WEBRTC_EVENT_NONE                      = 0, /*!< None event */
-    ESP_WEBRTC_EVENT_CONNECTED                 = 1, /*!< Connected event */
-    ESP_WEBRTC_EVENT_CONNECT_FAILED            = 2, /*!< Connected failed event */
-    ESP_WEBRTC_EVENT_DISCONNECTED              = 3, /*!< Disconnected event */
-    ESP_WEBRTC_EVENT_DATA_CHANNEL_CONNECTED    = 4, /*!< Data channel connected event */
-    ESP_WEBRTC_EVENT_DATA_CHANNEL_DISCONNECTED = 5, /*!< Data channel disconnected event */
-    ESP_WEBRTC_EVENT_DATA_CHANNEL_OPENED       = 6, /*!< Data channel opened event, suitable for one data channel only */
-    ESP_WEBRTC_EVENT_DATA_CHANNEL_CLOSED       = 7, /*!< Data channel closed event, suitable for one data channel only */
+    ESP_WEBRTC_EVENT_PAIRED                    = 1, /*!< Paired event */
+    ESP_WEBRTC_EVENT_CONNECTED                 = 2, /*!< Connected event */
+    ESP_WEBRTC_EVENT_CONNECT_FAILED            = 3, /*!< Connected failed event */
+    ESP_WEBRTC_EVENT_DISCONNECTED              = 4, /*!< Disconnected event */
+    ESP_WEBRTC_EVENT_DATA_CHANNEL_CONNECTED    = 5, /*!< Data channel connected event */
+    ESP_WEBRTC_EVENT_DATA_CHANNEL_DISCONNECTED = 6, /*!< Data channel disconnected event */
+    ESP_WEBRTC_EVENT_DATA_CHANNEL_OPENED       = 7, /*!< Data channel opened event, suitable for one data channel only */
+    ESP_WEBRTC_EVENT_DATA_CHANNEL_CLOSED       = 8, /*!< Data channel closed event, suitable for one data channel only */
 } esp_webrtc_event_type_t;
 
 /**

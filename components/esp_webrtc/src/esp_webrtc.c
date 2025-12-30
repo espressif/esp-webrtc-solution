@@ -248,6 +248,8 @@ static int pc_on_state(esp_peer_state_t state, void *ctx)
     if (state == ESP_PEER_STATE_CONNECTED) {
         start_stream(rtc);
         pc_notify_app(rtc, ESP_WEBRTC_EVENT_CONNECTED);
+    } else if (state == ESP_PEER_STATE_PAIRED) {
+        pc_notify_app(rtc, ESP_WEBRTC_EVENT_PAIRED);
     } else if (state == ESP_PEER_STATE_DISCONNECTED) {
         stop_stream(rtc);
         pc_notify_app(rtc, ESP_WEBRTC_EVENT_DISCONNECTED);

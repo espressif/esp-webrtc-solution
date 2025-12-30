@@ -173,6 +173,14 @@ typedef struct {
 } esp_peer_data_channel_info_t;
 
 /**
+ * @brief  Peer RTP transform role
+ */
+typedef enum {
+    ESP_PEER_RTP_TRANSFORM_ROLE_SENDER   = 0,  /*!< RTP transformer for sender */
+    ESP_PEER_RTP_TRANSFORM_ROLE_RECEIVER = 1,  /*!< RTP transformer for receiver */
+} esp_peer_rtp_transform_role_t;
+
+/**
  * @brief  Peer handle
  */
 typedef void *esp_peer_handle_t;
@@ -377,6 +385,21 @@ typedef struct {
      * @return             Status code indicating success or failure.
      */
     int (*close)(esp_peer_handle_t peer);
+
+    /**
+     * @brief  Set RTP transformer for peer
+     *
+     * @param[in]  handle        Peer handle
+     * @param[in]  role          RTP transform role
+     * @param[in]  transform_cb  Transform callback
+     * @param[in]  ctx           Callback context
+     *
+     * @return
+     *       - 0      On success
+     *       - Others Failed to set
+     */
+    int (*set_rtp_transformer)(esp_peer_handle_t handle, esp_peer_rtp_transform_role_t role,
+                               esp_peer_rtp_transform_cb_t *transform_cb, void *ctx);
 } esp_peer_ops_t;
 
 /**
@@ -453,6 +476,21 @@ int esp_peer_close_data_channel(esp_peer_handle_t peer, const char *label);
  *       - ESP_PEER_ERR_NOT_SUPPORT  Not support
  */
 int esp_peer_update_ice_info(esp_peer_handle_t peer, esp_peer_role_t role, esp_peer_ice_server_cfg_t* server, int server_num);
+
+/**
+ * @brief  Set RTP transformer for peer
+ *
+ * @param[in]  handle        Peer handle
+ * @param[in]  role          RTP transform role
+ * @param[in]  transform_cb  Transform callback (set to NULL to disable transformer)
+ * @param[in]  ctx           Callback context
+ *
+ * @return
+ *       - 0      On success
+ *       - Others Failed to get encoded size
+ */
+int esp_peer_set_rtp_transformer(esp_peer_handle_t handle, esp_peer_rtp_transform_role_t role,
+                                 esp_peer_rtp_transform_cb_t *transform_cb, void *ctx);
 
 /**
  * @brief  Send message to peer
@@ -552,6 +590,21 @@ int esp_peer_disconnect(esp_peer_handle_t peer);
  *       - ESP_PEER_ERR_INVALID_ARG  Invalid argument
  */
 int esp_peer_query(esp_peer_handle_t peer);
+
+/**
+ * @brief  Get paired remote address after connectivity check success
+ *
+ * @note  This API current only supported by peer_default
+ *        Need to call if after `ESP_PEER_STATE_PAIRED` received
+ *
+ * @param[in]  peer  Peer handle
+ *
+ * @return
+ *       - ESP_PEER_ERR_NONE         Open peer connection success
+ *       - ESP_PEER_ERR_INVALID_ARG  Invalid argument
+ *       - ESP_PEER_ERR_WRONG_STATE  Not paired yet
+ */
+int esp_peer_get_paired_addr(esp_peer_handle_t handle, esp_peer_addr_t *addr);
 
 /**
  * @brief  Close peer connection
