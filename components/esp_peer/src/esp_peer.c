@@ -10,6 +10,8 @@
 #include <string.h>
 #include "dtls_srtp.h"
 
+#define WEAK __attribute__((weak))
+
 typedef struct {
     esp_peer_ops_t    ops;
     esp_peer_handle_t handle;
@@ -130,6 +132,19 @@ int esp_peer_send_data(esp_peer_handle_t handle, esp_peer_data_frame_t *info)
     return ESP_PEER_ERR_NOT_SUPPORT;
 }
 
+int esp_peer_set_rtp_transformer(esp_peer_handle_t handle, esp_peer_rtp_transform_role_t role,
+                                 esp_peer_rtp_transform_cb_t *transform_cb, void *ctx)
+{
+    if (handle == NULL) {
+        return ESP_PEER_ERR_INVALID_ARG;
+    }
+    peer_wrapper_t *peer = (peer_wrapper_t *)handle;
+    if (peer->ops.set_rtp_transformer) {
+        return peer->ops.set_rtp_transformer(peer->handle, role, transform_cb, ctx);
+    }
+    return ESP_PEER_ERR_NOT_SUPPORT;
+}
+
 int esp_peer_main_loop(esp_peer_handle_t handle)
 {
     if (handle == NULL) {
@@ -181,8 +196,27 @@ int esp_peer_close(esp_peer_handle_t handle)
     return ret;
 }
 
+/**
+ * @brief  Following API may specially supported by peer default
+ *         Add Weak implementation to avoid build issue if using other PeerConnection implement
+ */
+int WEAK peer_default_get_paired_addr(esp_peer_handle_t handle, esp_peer_addr_t *addr)
+{
+    return ESP_PEER_ERR_NOT_SUPPORT;
+}
+
+int esp_peer_get_paired_addr(esp_peer_handle_t handle, esp_peer_addr_t *addr)
+{
+    if (handle == NULL) {
+        return ESP_PEER_ERR_INVALID_ARG;
+    }
+    peer_wrapper_t *peer = (peer_wrapper_t *)handle;
+    return peer_default_get_paired_addr(peer->handle, addr);
+}
+
 int esp_peer_pre_generate_cert(void)
 {
     int ret = dtls_srtp_gen_cert();
     return ret == 0 ? ESP_PEER_ERR_NONE : ESP_PEER_ERR_FAIL;
 }
+

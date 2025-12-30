@@ -213,6 +213,47 @@
             opacity: 0.8;
             margin-top: 2px;
         }
+        .config-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        .config-section h4 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #495057;
+        }
+        .config-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .config-item label {
+            font-size: 14px;
+            color: #495057;
+            cursor: pointer;
+            user-select: none;
+        }
+        .config-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .rtp-transformer-disabled {
+            background-color: #6c757d !important;
+        }
+        .rtp-transformer-disabled:hover {
+            background-color: #5a6268 !important;
+        }
+        .rtp-transformer-enabled {
+            background-color: #28a745 !important;
+        }
+        .rtp-transformer-enabled:hover {
+            background-color: #218838 !important;
+        }
         .detection-events {
             margin-top: 15px;
             padding: 0;
@@ -331,7 +372,20 @@
                     <span class="button-sub" id="eventCount">0 events</span>
                 </div>
             </button>
-            
+
+            <!-- Configuration Section -->
+            <div class="config-section">
+                <h4>RTP Transformer</h4>
+                <div class="config-item">
+                    <button id="rtpTransformerToggleBtn" class="open-door-button" style="width: 100%;">
+                        <svg viewBox="0 0 24 24" style="width: 20px; height: 20px;">
+                            <path id="rtpTransformerIcon" d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                        </svg>
+                        <span id="rtpTransformerText">Enable RTP Transformer</span>
+                    </button>
+                </div>
+            </div>
+
             <!-- Detection Events List -->
             <div class="detection-events">
                 <ul id="detectionList" class="detection-list">
@@ -360,6 +414,7 @@
         let dataChannels = [];
         let detectionEvents = [];
         let eventCounter = 0;
+        let rtpTransformerEnabled = false;  // Default disabled
 
         const localVideo = document.getElementById('localVideo');
         const remoteVideo = document.getElementById('remoteVideo');
@@ -370,6 +425,9 @@
         const detectionList = document.getElementById('detectionList');
         const eventCountSpan = document.getElementById('eventCount');
         const clearEventsButton = document.getElementById('clearEventsButton');
+        const rtpTransformerToggleBtn = document.getElementById('rtpTransformerToggleBtn');
+        const rtpTransformerIcon = document.getElementById('rtpTransformerIcon');
+        const rtpTransformerText = document.getElementById('rtpTransformerText');
 
         // Initialize ring sound
         function initRingSound() {
@@ -488,7 +546,7 @@
                 alert('No detection events to clear.');
                 return;
             }
-            
+
             if (confirm(`Clear all ${detectionEvents.length} detection event${detectionEvents.length === 1 ? '' : 's'}?`)) {
                 clearDetectionEvents();
             }
@@ -680,6 +738,61 @@
             }
         }
 
+        // RTP Transformer worker code for audio (Receiver & Sender)
+        const rtpAudioTransformerWorkerCode = `
+            let count = 0;
+            self.onrtctransform = (event) => {
+                const { readable, writable } = event.transformer;
+                const reader = readable.getReader(), writer = writable.getWriter();
+                const role = event.transformer.options.role;
+                (async () => {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        try {
+                            const data = new Uint8Array(value.data);
+                            if (role === 'receiver') {
+                                if (data.length < 8) { await writer.write(value); continue; }
+                                const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+                                const n = view.getUint32(0, true), m = view.getUint32(4 + n, true);
+                                if (data.length === 8 + n + m) {
+                                    const tail = new TextDecoder().decode(data.slice(8 + n));
+                                    if (tail.startsWith('TAIL_') && count++ % 100 === 0)
+                                        console.log('[Audio Receiver] Verified:', tail);
+                                    value.data = data.slice(4, 4 + n).buffer;
+                                }
+                            } else {
+                                const tail = \`TAIL_\${count++}\\0\`, tailB = new TextEncoder().encode(tail);
+                                const out = new Uint8Array(8 + data.length + tailB.length);
+                                const view = new DataView(out.buffer);
+                                view.setUint32(0, data.length, true);
+                                out.set(data, 4);
+                                view.setUint32(4 + data.length, tailB.length, true);
+                                out.set(tailB, 8 + data.length);
+                                value.data = out.buffer;
+                            }
+                        } catch (e) {}
+                        await writer.write(value);
+                    }
+                })();
+            };
+        `;
+
+        // RTP Transformer worker code for video (Simple Passthrough)
+        const rtpVideoTransformerWorkerCode = `
+            self.onrtctransform = (event) => {
+                const { readable, writable } = event.transformer;
+                const reader = readable.getReader(), writer = writable.getWriter();
+                (async () => {
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        await writer.write(value);
+                    }
+                })();
+            };
+        `;
+
         function createPeerConnection() {
             const configuration = {
                 iceServers: [
@@ -693,7 +806,8 @@
                 iceCandidatePoolSize: 10,
                 bundlePolicy: 'max-bundle',
                 rtcpMuxPolicy: 'require',
-                sdpSemantics: 'unified-plan'
+                sdpSemantics: 'unified-plan',
+                encodedInsertableStreams: rtpTransformerEnabled
             };
 
             try {
@@ -825,6 +939,39 @@
                 console.log('Setting local description (answer)');
                 await peerConnection.setLocalDescription(answer);
 
+                // Set up RTP transformers for audio and video after answer is created
+                if (rtpTransformerEnabled && typeof RTCRtpScriptTransform !== 'undefined') {
+                    try {
+                        const transceivers = peerConnection.getTransceivers();
+                        const audioBlob = new Blob([rtpAudioTransformerWorkerCode], { type: 'application/javascript' });
+                        const audioUrl = URL.createObjectURL(audioBlob);
+                        const videoBlob = new Blob([rtpVideoTransformerWorkerCode], { type: 'application/javascript' });
+                        const videoUrl = URL.createObjectURL(videoBlob);
+
+                        transceivers.forEach(t => {
+                            const kind = t.receiver.track.kind;
+                            const url = kind === 'audio' ? audioUrl : videoUrl;
+                            const code = kind === 'audio' ? rtpAudioTransformerWorkerCode : rtpVideoTransformerWorkerCode;
+
+                            if (t.receiver) {
+                                t.receiver.transform = new RTCRtpScriptTransform(new Worker(url), { role: 'receiver' });
+                            }
+                            if (t.sender) {
+                                t.sender.transform = new RTCRtpScriptTransform(new Worker(url), { role: 'sender' });
+                            }
+                            console.log(`[RTP Transformer] Applied to ${kind} transceiver`);
+                        });
+                    } catch (error) {
+                        console.warn('[RTP Transformer] Setup failed:', error);
+                    }
+                } else {
+                    if (!rtpTransformerEnabled) {
+                        console.log('[RTP Transformer] Disabled by configuration');
+                    } else {
+                        console.warn('[RTP Transformer] RTCRtpScriptTransform not available');
+                    }
+                }
+
                 console.log('Sending answer');
                 sendSignalingMessage({
                     type: 'answer',
@@ -894,6 +1041,34 @@
             });
         }
 
+        // Update RTP transformer button appearance
+        function updateRtpTransformerButton() {
+            if (rtpTransformerEnabled) {
+                rtpTransformerToggleBtn.classList.remove('rtp-transformer-disabled');
+                rtpTransformerToggleBtn.classList.add('rtp-transformer-enabled');
+                rtpTransformerIcon.setAttribute('d', 'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z');
+                rtpTransformerText.textContent = 'Disable RTP Transformer';
+            } else {
+                rtpTransformerToggleBtn.classList.remove('rtp-transformer-enabled');
+                rtpTransformerToggleBtn.classList.add('rtp-transformer-disabled');
+                rtpTransformerIcon.setAttribute('d', 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z');
+                rtpTransformerText.textContent = 'Enable RTP Transformer';
+            }
+        }
+
+        // RTP transformer toggle button handler
+        rtpTransformerToggleBtn.onclick = () => {
+            rtpTransformerEnabled = !rtpTransformerEnabled;
+            if (rtpTransformerEnabled) {
+                sendCustomCommand('ENABLE_RTP_TRANSFORMER');
+                console.log('[RTP Transformer] Enable command sent');
+            } else {
+                sendCustomCommand('DISABLE_RTP_TRANSFORMER');
+                console.log('[RTP Transformer] Disable command sent');
+            }
+            updateRtpTransformerButton();
+        };
+
         // Initialize when page loads
         window.onload = function() {
             initRingSound();
@@ -905,6 +1080,8 @@
             openDoorButton.disabled = false;
             // Initialize detection events display
             updateEventCount();
+            // Initialize RTP transformer button state
+            updateRtpTransformerButton();
 
             // Add click handler for video toggle
             const localVideoBox = document.getElementById('localVideoBox');

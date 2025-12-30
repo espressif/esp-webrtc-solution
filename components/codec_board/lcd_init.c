@@ -40,6 +40,7 @@ typedef struct {
 
 static extend_io_ops_t        extend_io_ops;
 static esp_lcd_panel_handle_t panel_handle = NULL;
+static esp_lcd_panel_io_handle_t g_io_handle = NULL;
 
 static int tca9554_io_init(lcd_cfg_t *cfg)
 {
@@ -196,6 +197,7 @@ static int _init_spi_lcd(lcd_cfg_t *cfg)
     esp_lcd_panel_io_handle_t io_handle;
     ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)bus_id, &io_config, &io_handle);
     RETURN_ON_ERR(ret);
+    g_io_handle = io_handle;
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = get_hw_gpio(cfg->reset_pin),
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
@@ -255,6 +257,7 @@ static int _init_mipi_lcd(lcd_cfg_t *cfg)
     };
     ret = esp_lcd_new_panel_io_dbi(mipi_dsi_bus, &dbi_config, &mipi_dbi_io);
     RETURN_ON_ERR(ret);
+    g_io_handle = mipi_dbi_io;
     esp_lcd_dpi_panel_config_t dpi_config = {
         .num_fbs = mipi_cfg->fb_num,
         .virtual_channel = 0,
@@ -381,3 +384,9 @@ void *board_get_lcd_handle(void)
     }
     return NULL;
 }
+
+void *board_get_lcd_io_handle(void)
+{
+    return g_io_handle;
+}
+

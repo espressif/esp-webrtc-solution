@@ -181,6 +181,15 @@ int board_lcd_init(void);
  */
 void *board_get_lcd_handle(void);
 
+/**
+ * @brief  Get LCD IO handle
+ *
+ * @return
+ *       - NULL    Fail to get LCD IO handle
+ *       - Others  LCD IO handle
+ */
+void *board_get_lcd_io_handle(void);
+
 #ifdef __cplusplus
 }
 #endif

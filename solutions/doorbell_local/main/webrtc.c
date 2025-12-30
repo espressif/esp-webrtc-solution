@@ -15,20 +15,26 @@
 #include "esp_webrtc_defaults.h"
 #include "esp_peer_default.h"
 #include "webrtc_http_server.h"
+#include "esp_peer.h"
+#include <string.h>
+#include <inttypes.h>
 
 #define TAG "DOOR_BELL"
 
 // Customized commands
-#define DOOR_BELL_OPEN_DOOR_CMD     "OPEN_DOOR"
-#define DOOR_BELL_DOOR_OPENED_CMD   "DOOR_OPENED"
-#define DOOR_BELL_RING_CMD          "RING"
-#define DOOR_BELL_CALL_ACCEPTED_CMD "ACCEPT_CALL"
-#define DOOR_BELL_CALL_DENIED_CMD   "DENY_CALL"
+#define DOOR_BELL_OPEN_DOOR_CMD           "OPEN_DOOR"
+#define DOOR_BELL_DOOR_OPENED_CMD         "DOOR_OPENED"
+#define DOOR_BELL_RING_CMD                "RING"
+#define DOOR_BELL_CALL_ACCEPTED_CMD        "ACCEPT_CALL"
+#define DOOR_BELL_CALL_DENIED_CMD         "DENY_CALL"
+#define DOOR_BELL_ENABLE_RTP_TRANSFORMER  "ENABLE_RTP_TRANSFORMER"
+#define DOOR_BELL_DISABLE_RTP_TRANSFORMER "DISABLE_RTP_TRANSFORMER"
 
 #define SAME_STR(a, b) (strncmp(a, b, sizeof(b) - 1) == 0)
 #define SEND_CMD(webrtc, cmd) \
     esp_webrtc_send_custom_data(webrtc, ESP_WEBRTC_CUSTOM_DATA_VIA_SIGNALING, (uint8_t *)cmd, strlen(cmd))
-#define ELEMS(arr) sizeof(arr)/sizeof(arr[0])
+#define ELEMS(arr)       sizeof(arr)/sizeof(arr[0])
+#define RTP_HEADER_SIZE  12
 
 typedef enum {
     DOOR_BELL_STATE_NONE,
@@ -68,6 +74,16 @@ extern const uint8_t open_music_start[] asm("_binary_open_aac_start");
 extern const uint8_t open_music_end[] asm("_binary_open_aac_end");
 extern const uint8_t join_music_start[] asm("_binary_join_aac_start");
 extern const uint8_t join_music_end[] asm("_binary_join_aac_end");
+
+// RTP Transformer test context
+typedef struct {
+    uint32_t frame_count;
+    uint32_t error_count;
+} rtp_transformer_ctx_t;
+
+static rtp_transformer_ctx_t sender_transformer_ctx;
+static rtp_transformer_ctx_t receiver_transformer_ctx;
+static bool rtp_transformer_enabled = false;
 
 static int play_tone(door_bell_tone_type_t type)
 {
@@ -136,6 +152,16 @@ static int door_bell_on_cmd(esp_webrtc_custom_data_via_t via, uint8_t *data, int
     } else if (SAME_STR(cmd, DOOR_BELL_CALL_DENIED_CMD)) {
         esp_webrtc_enable_peer_connection(webrtc, false);
         door_bell_change_state(DOOR_BELL_STATE_NONE);
+    } else if (SAME_STR(cmd, DOOR_BELL_ENABLE_RTP_TRANSFORMER)) {
+        if (!rtp_transformer_enabled) {
+            rtp_transformer_enabled = true;
+            ESP_LOGI(TAG, "RTP transformer enabled via command");
+        }
+    } else if (SAME_STR(cmd, DOOR_BELL_DISABLE_RTP_TRANSFORMER)) {
+        if (rtp_transformer_enabled) {
+            rtp_transformer_enabled = false;
+            ESP_LOGI(TAG, "RTP transformer disabled via command");
+        }
     }
     return 0;
 }
@@ -291,12 +317,169 @@ static int webrtc_data_channel_closed(esp_peer_data_channel_info_t *ch, void *ct
     return 0;
 }
 
+static int rtp_sender_get_encoded_size(esp_peer_rtp_frame_t *frame, bool *in_place, void *ctx)
+{
+    rtp_transformer_ctx_t *t_ctx = (rtp_transformer_ctx_t *)ctx;
+    // Skip for video payload
+    if (frame->payload_type >= 96) {
+        return ESP_PEER_ERR_NOT_SUPPORT;
+    }
+    int tail_size = snprintf(NULL, 0, "TAIL_%" PRIu32, t_ctx->frame_count);
+    // Make sure encoded size < one MTU
+    frame->encoded_size = frame->orig_size + sizeof(uint32_t) * 2 + tail_size + 1;
+    if (frame->encoded_size > 1300) {
+        return ESP_PEER_ERR_NOT_SUPPORT;
+    }
+    // Not support in place transform
+    *in_place = false;
+    return 0;
+}
+
+static int rtp_sender_transform(esp_peer_rtp_frame_t *frame, void *ctx)
+{
+    rtp_transformer_ctx_t *t_ctx = (rtp_transformer_ctx_t *)ctx;
+    // Skip for video payload
+    if (frame->payload_type >= 96 || frame->orig_size < RTP_HEADER_SIZE) {
+        return ESP_PEER_ERR_NOT_SUPPORT;
+    }
+    char tail_string[64];
+    int written = snprintf(tail_string, sizeof(tail_string), "TAIL_%" PRIu32, t_ctx->frame_count);
+    tail_string[written] = '\0';
+    uint32_t tail_len = written + 1;
+    // Build new payload: [4-byte size][original payload][tail string]
+    uint32_t new_size = frame->orig_size + sizeof(uint32_t) * 2 + tail_len;
+    uint8_t *new_data = frame->encoded_data;
+    int src_ofst = 0;
+    int dst_ofst = 0;
+    memcpy(new_data + dst_ofst, frame->orig_data + src_ofst, RTP_HEADER_SIZE);
+    dst_ofst += RTP_HEADER_SIZE;
+    src_ofst += RTP_HEADER_SIZE;
+
+    uint32_t payload_size = frame->orig_size - RTP_HEADER_SIZE;
+    memcpy(new_data + dst_ofst, &payload_size, sizeof(uint32_t));
+    dst_ofst += sizeof(uint32_t);
+
+    memcpy(new_data + dst_ofst, frame->orig_data + src_ofst, payload_size);
+    dst_ofst += payload_size;
+    memcpy(new_data + dst_ofst, &tail_len, sizeof(uint32_t));
+    dst_ofst += sizeof(uint32_t);
+    memcpy(new_data + dst_ofst, tail_string, tail_len);
+    dst_ofst += tail_len;
+    frame->encoded_size = new_size;
+    t_ctx->frame_count++;
+    if (t_ctx->frame_count % 100 == 0) {
+        ESP_LOGI(TAG, "[SENDER] RTP transformed: frame_count=%u, error_count=%u",
+                 t_ctx->frame_count, t_ctx->error_count);
+    }
+    return 0;
+}
+
+static int rtp_receiver_get_encoded_size(esp_peer_rtp_frame_t *frame, bool *in_place, void *ctx)
+{
+    rtp_transformer_ctx_t *t_ctx = (rtp_transformer_ctx_t *)ctx;
+    // Skip for video payload
+    if (frame->payload_type >= 96) {
+        return ESP_PEER_ERR_NOT_SUPPORT;
+    }
+    uint32_t original_size = 0;
+    memcpy(&original_size, frame->orig_data + RTP_HEADER_SIZE, sizeof(uint32_t));
+    if (RTP_HEADER_SIZE + original_size + sizeof(uint32_t) * 2 > frame->orig_size) {
+        t_ctx->error_count++;
+        return ESP_PEER_ERR_BAD_DATA;
+    }
+    uint32_t tail_size = 0;
+    memcpy(&tail_size, frame->orig_data + RTP_HEADER_SIZE + original_size + sizeof(uint32_t), sizeof(uint32_t));
+    uint32_t encoded_size = RTP_HEADER_SIZE + original_size + sizeof(uint32_t) * 2 + tail_size;
+    if (encoded_size != frame->orig_size) {
+        t_ctx->error_count++;
+        return ESP_PEER_ERR_BAD_DATA;
+    }
+    frame->encoded_size = RTP_HEADER_SIZE + original_size;
+    *in_place = true;
+    return 0;
+}
+
+static int rtp_receiver_transform(esp_peer_rtp_frame_t *frame, void *ctx)
+{
+    rtp_transformer_ctx_t *t_ctx = (rtp_transformer_ctx_t *)ctx;
+    uint32_t original_size = 0;
+    uint8_t *original_data = NULL;
+    uint32_t tail_size = 0;
+    int ofst = RTP_HEADER_SIZE;
+    memcpy(&original_size, frame->orig_data + ofst, sizeof(uint32_t));
+    ofst += sizeof(uint32_t);
+    original_data = frame->orig_data + ofst;
+    ofst += original_size;
+    memcpy(&tail_size, frame->orig_data + ofst, sizeof(uint32_t));
+    ofst += sizeof(uint32_t);
+    char *tail_str = (char*)frame->orig_data + ofst;
+    t_ctx->frame_count++;
+    if (strncmp(tail_str, "TAIL_", 5) != 0) {
+        t_ctx->error_count++;
+        return ESP_PEER_ERR_BAD_DATA;
+    }
+    if (frame->encoded_data != frame->orig_data) {
+        memcpy(frame->encoded_data, frame->orig_data, RTP_HEADER_SIZE);
+        memcpy(frame->encoded_data + RTP_HEADER_SIZE, original_data, original_size);
+    } else {
+        memmove(frame->orig_data + RTP_HEADER_SIZE, original_data, original_size);
+    }
+    frame->encoded_size = RTP_HEADER_SIZE + original_size;
+    if (t_ctx->frame_count % 100 == 0) {
+        ESP_LOGI(TAG, "[RECEIVER] RTP transformed: frame_count=%u, error_count=%u",
+                 t_ctx->frame_count, t_ctx->error_count);
+    }
+    return 0;
+}
+
+static void setup_rtp_transformers(esp_peer_handle_t peer_handle)
+{
+    // Set up sender transformer
+    esp_peer_rtp_transform_cb_t sender_transform_cb = {
+        .get_encoded_size = rtp_sender_get_encoded_size,
+        .transform = rtp_sender_transform,
+    };
+    int ret = esp_peer_set_rtp_transformer(peer_handle,
+                                           ESP_PEER_RTP_TRANSFORM_ROLE_SENDER,
+                                           rtp_transformer_enabled ? &sender_transform_cb : NULL,
+                                           rtp_transformer_enabled ? &sender_transformer_ctx : NULL);
+    if (ret == ESP_PEER_ERR_NONE) {
+        ESP_LOGI(TAG, "RTP sender transformer set up successfully");
+    } else {
+        ESP_LOGE(TAG, "Failed to set up RTP sender transformer: %d", ret);
+    }
+    // Set up receiver transformer
+    esp_peer_rtp_transform_cb_t receiver_transform_cb = {
+        .get_encoded_size = rtp_receiver_get_encoded_size,
+        .transform = rtp_receiver_transform,
+    };
+    ret = esp_peer_set_rtp_transformer(peer_handle,
+                                       ESP_PEER_RTP_TRANSFORM_ROLE_RECEIVER,
+                                       rtp_transformer_enabled ? &receiver_transform_cb : NULL,
+                                       rtp_transformer_enabled ? &receiver_transformer_ctx : NULL);
+    if (ret == ESP_PEER_ERR_NONE) {
+        ESP_LOGI(TAG, "RTP receiver transformer set up successfully");
+    } else {
+        ESP_LOGE(TAG, "Failed to set up RTP receiver transformer: %d", ret);
+    }
+}
+
 static int webrtc_event_handler(esp_webrtc_event_t *event, void *ctx)
 {
     if (event->type == ESP_WEBRTC_EVENT_CONNECTED) {
         door_bell_change_state(DOOR_BELL_STATE_CONNECTED);
     } else if (event->type == ESP_WEBRTC_EVENT_CONNECT_FAILED || event->type == ESP_WEBRTC_EVENT_DISCONNECTED) {
         door_bell_change_state(DOOR_BELL_STATE_NONE);
+        // Reset transformer contexts
+        memset(&sender_transformer_ctx, 0, sizeof(sender_transformer_ctx));
+        memset(&receiver_transformer_ctx, 0, sizeof(receiver_transformer_ctx));
+    } else if (event->type == ESP_WEBRTC_EVENT_PAIRED) {
+        esp_peer_handle_t peer_handle = NULL;
+        esp_webrtc_get_peer_connection(webrtc, &peer_handle);
+        setup_rtp_transformers(peer_handle);
+        esp_peer_addr_t addr = {};
+        esp_peer_get_paired_addr(peer_handle, &addr);
+        ESP_LOGI(TAG, "Paired with %d.%d.%d.%d:%d", addr.ipv4[0], addr.ipv4[1], addr.ipv4[2], addr.ipv4[3], addr.port);
     }
     return 0;
 }

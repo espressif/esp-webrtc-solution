@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0.1
+
+- Support get LCD IO handle through `board_get_lcd_io_handle`
+
 ## v2.0.0
 
 - Fixed `fb_num` configuration no take effect
