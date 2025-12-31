@@ -99,7 +99,6 @@ static int door_bell_on_cmd(esp_webrtc_custom_data_via_t via, uint8_t *data, int
             play_tone(DOOR_BELL_TONE_OPEN_DOOR);
         }
     } else if (SAME_STR(cmd, DOOR_BELL_CALL_ACCEPTED_CMD)) {
-        door_bell_change_state(DOOR_BELL_STATE_CONNECTING);
         esp_webrtc_enable_peer_connection(webrtc, true);
     } else if (SAME_STR(cmd, DOOR_BELL_CALL_DENIED_CMD)) {
         esp_webrtc_enable_peer_connection(webrtc, false);
@@ -110,7 +109,9 @@ static int door_bell_on_cmd(esp_webrtc_custom_data_via_t via, uint8_t *data, int
 
 static int webrtc_event_handler(esp_webrtc_event_t *event, void *ctx)
 {
-    if (event->type == ESP_WEBRTC_EVENT_CONNECTED) {
+    if (event->type == ESP_WEBRTC_EVENT_CONNECTING) {
+        door_bell_change_state(DOOR_BELL_STATE_CONNECTING);
+    } else if (event->type == ESP_WEBRTC_EVENT_CONNECTED) {
         door_bell_change_state(DOOR_BELL_STATE_CONNECTED);
     } else if (event->type == ESP_WEBRTC_EVENT_CONNECT_FAILED || event->type == ESP_WEBRTC_EVENT_DISCONNECTED) {
         door_bell_change_state(DOOR_BELL_STATE_NONE);

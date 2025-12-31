@@ -244,8 +244,9 @@ static int pc_on_state(esp_peer_state_t state, void *ctx)
         state != ESP_PEER_STATE_DATA_CHANNEL_DISCONNECTED) {
         rtc->peer_state = state;
     }
-
-    if (state == ESP_PEER_STATE_CONNECTED) {
+    if (state == ESP_PEER_STATE_CANDIDATE_GATHERING) {
+        pc_notify_app(rtc, ESP_WEBRTC_EVENT_CONNECTING);
+    } else if (state == ESP_PEER_STATE_CONNECTED) {
         start_stream(rtc);
         pc_notify_app(rtc, ESP_WEBRTC_EVENT_CONNECTED);
     } else if (state == ESP_PEER_STATE_PAIRED) {
