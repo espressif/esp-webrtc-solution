@@ -63,6 +63,7 @@ typedef struct {
     esp_peer_default_data_ch_cfg_t  data_ch_cfg;         /*!< Configuration of data channel */
     esp_peer_default_rtp_cfg_t      rtp_cfg;             /*!< Configuration of RTP buffer */
     bool                            keep_role;           /*!< Do not reset role to controlling when disconnected */
+    bool                            ipv6_support;        /*!< Support IPv6 */
 } esp_peer_default_cfg_t;
 
 /**
