@@ -123,14 +123,15 @@ typedef struct {
  */
 typedef enum {
     ESP_WEBRTC_EVENT_NONE                      = 0, /*!< None event */
-    ESP_WEBRTC_EVENT_PAIRED                    = 1, /*!< Paired event */
-    ESP_WEBRTC_EVENT_CONNECTED                 = 2, /*!< Connected event */
-    ESP_WEBRTC_EVENT_CONNECT_FAILED            = 3, /*!< Connected failed event */
-    ESP_WEBRTC_EVENT_DISCONNECTED              = 4, /*!< Disconnected event */
-    ESP_WEBRTC_EVENT_DATA_CHANNEL_CONNECTED    = 5, /*!< Data channel connected event */
-    ESP_WEBRTC_EVENT_DATA_CHANNEL_DISCONNECTED = 6, /*!< Data channel disconnected event */
-    ESP_WEBRTC_EVENT_DATA_CHANNEL_OPENED       = 7, /*!< Data channel opened event, suitable for one data channel only */
-    ESP_WEBRTC_EVENT_DATA_CHANNEL_CLOSED       = 8, /*!< Data channel closed event, suitable for one data channel only */
+    ESP_WEBRTC_EVENT_CONNECTING                = 1, /*!< Connecting event */
+    ESP_WEBRTC_EVENT_PAIRED                    = 2, /*!< Paired event */
+    ESP_WEBRTC_EVENT_CONNECTED                 = 3, /*!< Connected event */
+    ESP_WEBRTC_EVENT_CONNECT_FAILED            = 4, /*!< Connected failed event */
+    ESP_WEBRTC_EVENT_DISCONNECTED              = 5, /*!< Disconnected event */
+    ESP_WEBRTC_EVENT_DATA_CHANNEL_CONNECTED    = 6, /*!< Data channel connected event */
+    ESP_WEBRTC_EVENT_DATA_CHANNEL_DISCONNECTED = 7, /*!< Data channel disconnected event */
+    ESP_WEBRTC_EVENT_DATA_CHANNEL_OPENED       = 8, /*!< Data channel opened event, suitable for one data channel only */
+    ESP_WEBRTC_EVENT_DATA_CHANNEL_CLOSED       = 9, /*!< Data channel closed event, suitable for one data channel only */
 } esp_webrtc_event_type_t;
 
 /**
