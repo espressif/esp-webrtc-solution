@@ -26,6 +26,9 @@ config ESP32_S3_BOX_3_BOARD
 config ESP32_P4_FUNCTION_EV_V14_BOARD
     depends on IDF_TARGET_ESP32P4
     bool "ESP32 P4 Function EV V1.4"
+config ESP32_P4_EYE_BOARD
+    depends on IDF_TARGET_ESP32P4
+    bool "ESP32 P4 EYE"
 config ESP32_S3_EYE_BOARD
     depends on IDF_TARGET_ESP32S3
     bool "ESP32 S3 EYE"
@@ -57,5 +60,6 @@ config CODEC_BOARD
     default "ESP32_S3_KORVO_2L" if ESP32_S3_KORVO_2L_BOARD
     default "ESP32_S3_EchoEar" if ESP32_S3_ECHOEAR_BOARD
     default "ATOMS3_ECHO_BASE" if ATOMS3_ECHO_BASE_BOARD
+    default "ESP32_P4_EYE" if ESP32_P4_EYE_BOARD
     default "DUMMY_CODEC_BOARD"
 endmenu

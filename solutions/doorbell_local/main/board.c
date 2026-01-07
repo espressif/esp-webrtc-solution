@@ -14,8 +14,33 @@
 #include "esp_codec_dev.h"
 #include "sdkconfig.h"
 #include "settings.h"
+#if CONFIG_IDF_TARGET_ESP32P4
+#include "esp_cam_sensor_xclk.h"
+#endif
 
 static const char *TAG = "Board";
+
+static int enable_p4_eye_camera(camera_cfg_t *cfg, bool enable)
+{
+    if (cfg->pwr == -1) {
+        return 0;
+    }
+    int ret = 0;
+#if CONFIG_IDF_TARGET_ESP32P4
+    esp_cam_sensor_xclk_handle_t xclk_handle = NULL;
+    if (enable) {
+        esp_cam_sensor_xclk_config_t cam_xclk_config = {
+            .esp_clock_router_cfg = {
+                .xclk_pin = cfg->xclk,
+                .xclk_freq_hz = 24 * 1000000,
+            }
+        };
+        esp_cam_sensor_xclk_allocate(ESP_CAM_SENSOR_XCLK_ESP_CLOCK_ROUTER, &xclk_handle);
+        esp_cam_sensor_xclk_start(xclk_handle, &cam_xclk_config);
+    }
+#endif
+    return ret;
+}
 
 void init_board()
 {
@@ -25,6 +50,9 @@ void init_board()
     codec_init_cfg_t cfg = {.reuse_dev = false};
     if (strcmp(TEST_BOARD_NAME, "ESP32_P4_EYE") == 0) {
         cfg.in_mode = CODEC_I2S_MODE_PDM;
+        camera_cfg_t camera_cfg = {};
+        get_camera_cfg(&camera_cfg);
+        enable_p4_eye_camera(&camera_cfg, true);
     }
     init_codec(&cfg);
 }
