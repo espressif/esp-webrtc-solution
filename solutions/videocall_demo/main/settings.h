@@ -16,13 +16,22 @@ extern "C" {
 /**
  * @brief  Board name setting refer to `codec_board` README.md for more details
  */
+#if CONFIG_IDF_TARGET_ESP32P4
 #define TEST_BOARD_NAME "ESP32_P4_DEV_V14"
+#else
+#define TEST_BOARD_NAME "S3_Korvo_V2"
+#endif
 
 /**
  * @brief  Video resolution settings
  */
+#if CONFIG_IDF_TARGET_ESP32P4
 #define VIDEO_WIDTH  1024
 #define VIDEO_HEIGHT 600
+#else
+#define VIDEO_WIDTH  320
+#define VIDEO_HEIGHT 240
+#endif
 #define VIDEO_FPS    10
 
 /**
@@ -40,6 +49,7 @@ extern "C" {
  */
 #define DATA_CHANNEL_ENABLED (true)
 
+#if CONFIG_IDF_TARGET_ESP32P4
 /**
  * @brief  GPIO for ring button
  *
@@ -48,6 +58,14 @@ extern "C" {
  *        User must replace it to a unused GPIO instead (like GPIO27)
  */
 #define VIDEO_CALL_RING_BUTTON  35
+#else
+/**
+ * @brief  GPIO for ring button
+ *
+ * @note  When use ESP32S3-KORVO-V3 Use ADC button as ring button
+ */
+#define VIDEO_CALL_RING_BUTTON  5
+#endif
 
 #ifdef __cplusplus
 }
