@@ -520,7 +520,7 @@ int dtls_srtp_read(dtls_srtp_t *dtls_srtp, unsigned char *buf, size_t len)
             continue;
         } else if (ret == 0 || ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) { // Detected DTLS connection close ret
             ESP_LOGE(TAG, "Detected DTLS connection close ret %d", ret);
-            ret = -1;
+            ret = MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY;
             break;
         } else if (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_TIMEOUT) {
             ret = 0;
