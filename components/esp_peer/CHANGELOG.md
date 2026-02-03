@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.3.0
+
+### Bug Fixes
+
+- Fixed crash caused by receiving SCTP messages before data channel creation
+- Fixed incorrect H264 profile usage when controlled by peer
+- Fixed race condition in SCTP reference counting
+- Fixed misleading fingerprint verification error logs
+- Fixed crash due to negative KMS server priority value
+- Fixed agent deinitialization while still in use
+
+### Features
+
+- Added RTP transformer support (custom packet processing)
+- Added H264 RTP decoder support
+- Added IPv6 compatibility
+- Added media direction negotiation based on SDP
+- Added agent argument validation
+- Added receive lock to prevent crashes during concurrent packet processing
+- Added weak UDP transport implementation (fallback for unreliable networks)
+- Added DTLS close_notify handling for graceful disconnection
+- Added configurable limit for maximum ICE candidates
+
 ## v1.2.7
 
 ### Bug Fixes
