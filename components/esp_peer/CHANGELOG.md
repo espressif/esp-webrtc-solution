@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.0~1
+
+### Bug Fixes
+
+- Fixed esp32c5 library can not build on IDFv5.5.2
+
 ## v1.3.0
 
 ### Bug Fixes
