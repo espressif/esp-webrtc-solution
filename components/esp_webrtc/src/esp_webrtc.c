@@ -110,6 +110,12 @@ typedef struct {
     uint8_t  vid_send_num;
     uint8_t  aud_recv_num;
     uint8_t  vid_recv_num;
+
+    // Pending bitrate settings (applied when sink is created)
+    uint32_t pending_video_bitrate_bps;
+    bool     video_bitrate_pending;
+    uint32_t pending_audio_bitrate_bps;
+    bool     audio_bitrate_pending;
 } webrtc_t;
 
 static const char *TAG = "webrtc";
@@ -631,6 +637,30 @@ static int pc_start(webrtc_t *rtc, esp_peer_ice_server_cfg_t *server_info, int s
     esp_capture_sink_setup(rtc->media_provider.capture, 0, &sink_cfg, &rtc->capture_path);
     pc_apply_capture_pre_setting(rtc, WEBRTC_PRE_SETTING_MASK_ALL);
     esp_capture_sink_enable(rtc->capture_path, ESP_CAPTURE_RUN_MODE_ALWAYS);
+
+    // Apply pending bitrate settings now that sink exists
+    if (rtc->video_bitrate_pending && rtc->capture_path) {
+        int bitrate_ret = esp_capture_sink_set_bitrate(rtc->capture_path, ESP_CAPTURE_STREAM_TYPE_VIDEO, 
+                                                        rtc->pending_video_bitrate_bps);
+        if (bitrate_ret == ESP_CAPTURE_ERR_OK) {
+            ESP_LOGI(TAG, "Applied pending video bitrate: %lu bps", (unsigned long)rtc->pending_video_bitrate_bps);
+        } else {
+            ESP_LOGW(TAG, "Failed to apply pending video bitrate: %d", bitrate_ret);
+        }
+        rtc->video_bitrate_pending = false;
+    }
+    
+    if (rtc->audio_bitrate_pending && rtc->capture_path) {
+        int bitrate_ret = esp_capture_sink_set_bitrate(rtc->capture_path, ESP_CAPTURE_STREAM_TYPE_AUDIO, 
+                                                        rtc->pending_audio_bitrate_bps);
+        if (bitrate_ret == ESP_CAPTURE_ERR_OK) {
+            ESP_LOGI(TAG, "Applied pending audio bitrate: %lu bps", (unsigned long)rtc->pending_audio_bitrate_bps);
+        } else {
+            ESP_LOGW(TAG, "Failed to apply pending audio bitrate: %d", bitrate_ret);
+        }
+        rtc->audio_bitrate_pending = false;
+    }
+
     return ret;
 }
 
@@ -1002,4 +1032,58 @@ int esp_webrtc_close(esp_webrtc_handle_t handle)
     SAFE_FREE(rtc->aud_fifo);
     free(rtc);
     return ESP_PEER_ERR_NONE;
+}
+
+int esp_webrtc_set_video_bitrate(esp_webrtc_handle_t handle, uint32_t bps)
+{
+    if (handle == NULL) {
+        return ESP_PEER_ERR_INVALID_ARG;
+    }
+    
+    webrtc_t *rtc = (webrtc_t *)handle;
+    
+    // If capture path exists, apply immediately
+    if (rtc->capture_path) {
+        int ret = esp_capture_sink_set_bitrate(rtc->capture_path, ESP_CAPTURE_STREAM_TYPE_VIDEO, bps);
+        if (ret == ESP_CAPTURE_ERR_OK) {
+            ESP_LOGI(TAG, "Set video bitrate: %lu bps", (unsigned long)bps);
+            return 0;
+        } else {
+            ESP_LOGW(TAG, "Failed to set video bitrate: %d", ret);
+            return ret;
+        }
+    }
+    
+    // Otherwise, store as pending
+    rtc->pending_video_bitrate_bps = bps;
+    rtc->video_bitrate_pending = true;
+    ESP_LOGI(TAG, "Video bitrate %lu bps will be applied when WebRTC starts", (unsigned long)bps);
+    return 0;
+}
+
+int esp_webrtc_set_audio_bitrate(esp_webrtc_handle_t handle, uint32_t bps)
+{
+    if (handle == NULL) {
+        return ESP_PEER_ERR_INVALID_ARG;
+    }
+    
+    webrtc_t *rtc = (webrtc_t *)handle;
+    
+    // If capture path exists, apply immediately
+    if (rtc->capture_path) {
+        int ret = esp_capture_sink_set_bitrate(rtc->capture_path, ESP_CAPTURE_STREAM_TYPE_AUDIO, bps);
+        if (ret == ESP_CAPTURE_ERR_OK) {
+            ESP_LOGI(TAG, "Set audio bitrate: %lu bps", (unsigned long)bps);
+            return 0;
+        } else {
+            ESP_LOGW(TAG, "Failed to set audio bitrate: %d", ret);
+            return ret;
+        }
+    }
+    
+    // Otherwise, store as pending
+    rtc->pending_audio_bitrate_bps = bps;
+    rtc->audio_bitrate_pending = true;
+    ESP_LOGI(TAG, "Audio bitrate %lu bps will be applied when WebRTC starts", (unsigned long)bps);
+    return 0;
 }
