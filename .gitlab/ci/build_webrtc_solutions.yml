@@ -51,6 +51,8 @@ build_matrix:
         IDF_TARGET: ["esp32p4", "esp32s3"]
       - CI_BUILD_FOLDER: ["solutions/kms_demo"]
         IDF_TARGET: ["esp32p4", "esp32s3"]
+      - CI_BUILD_FOLDER: ["solutions/janus_demo"]
+        IDF_TARGET: ["esp32p4"]
 
 stages:
   - build
