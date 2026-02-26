@@ -1,4 +1,3 @@
-
 /**
  * ESPRESSIF MIT License
  *
@@ -25,54 +24,23 @@
 
 #pragma once
 
-#include "esp_peer.h"
-#include "esp_peer_signaling.h"
-#include "esp_peer_whip_signaling.h"
-#include "esp_peer_janus_signaling.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
-#endif
+#endif  /* __cplusplus */
 
 /**
- * @brief  Get APPRTC signaling implement
- *
- * @param[in]   cfg   Signaling configuration
- * @param[in]   impl  Implement of signaling interface
- * @param[out]  sig   Signaling handle
- *
- * @return
- *       - NULL    Not enough memory
- *       - Others  APPRTC signaling implementation
+ * @brief  Janus signaling configuration for VideoRoom publisher mode
  */
-const esp_peer_signaling_impl_t *esp_signaling_get_apprtc_impl(void);
-
-/**
- * @brief  Get WHIP signaling implementation
- *
- * @return
- *       - NULL    Not enough memory
- *       - Others  WHIP signaling implementation
- */
-const esp_peer_signaling_impl_t *esp_signaling_get_whip_impl(void);
-
-/**
- * @brief  Get Janus signaling implementation
- *
- * @return
- *       - NULL    Not enough memory
- *       - Others  Janus signaling implementation
- */
-const esp_peer_signaling_impl_t *esp_signaling_get_janus_impl(void);
-
-/**
- * @brief  Get default peer connection implementation
- * @return
- *       - NULL    No default implementation, or not enough memory
- *       - Others  Default implementation
- */
-const esp_peer_ops_t *esp_peer_get_default_impl(void);
+typedef struct {
+    uint64_t    room_id;     /*!< Janus VideoRoom room id */
+    const char *token;       /*!< Optional Janus token (when token auth enabled) */
+    const char *pin;         /*!< Optional room pin */
+    const char *display;     /*!< Optional publisher display */
+    const char *api_secret;  /*!< Optional Janus API secret */
+} esp_peer_signaling_janus_cfg_t;
 
 #ifdef __cplusplus
 }
-#endif
+#endif  /* __cplusplus */
