@@ -236,6 +236,17 @@ int start_webrtc(char *url)
     return ret;
 }
 
+int set_webrtc_bitrate(bool audio, int bitrate)
+{
+    if (webrtc == NULL) {
+        return -1;
+    }
+    if (audio) {
+        return esp_webrtc_set_audio_bitrate(webrtc, bitrate);
+    }
+    return esp_webrtc_set_video_bitrate(webrtc, bitrate);
+}
+
 void query_webrtc(void)
 {
     if (webrtc) {

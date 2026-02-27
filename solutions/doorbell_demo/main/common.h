@@ -35,6 +35,18 @@ void init_board(void);
 int start_webrtc(char *url);
 
 /**
+ * @brief  Set stream bitrate for WebRTC
+ *
+ * @param[in]  audio    Whether set audio stream bitrate, false set to video
+ * @param[in]  bitrate  Bitrate to set
+ *
+ * @return
+ *      - 0       On success
+ *      - Others  Fail to start
+ */
+int set_webrtc_bitrate(bool audio, int bitrate);
+
+/**
  * @brief  Query WebRTC status
  */
 void query_webrtc(void);
