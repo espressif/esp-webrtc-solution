@@ -59,7 +59,10 @@ extern "C" {
  * @note  When use ESP32S3-KORVO-V3 Use ADC button as ring button
  */
 #define DOOR_BELL_RING_BUTTON  5
+
 #endif
+
+#define WEBRTC_SUPPORT_OPUS
 
 #ifdef __cplusplus
 }

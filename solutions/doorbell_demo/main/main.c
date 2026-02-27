@@ -110,6 +110,24 @@ static int server_cli(int argc, char **argv)
     return 0;
 }
 
+static int bitrate_cli(int argc, char **argv)
+{
+    bool is_audio = false;
+    int bitrate = 0;
+    if (argc < 2) {
+        return -1;
+    } else if (argc == 2) {
+        is_audio = true;
+        bitrate = atoi(argv[1]);
+    } else {
+        if (strcmp(argv[1], "audio") == 0 || argv[1][0] == '1') {
+            is_audio = true;
+        }
+        bitrate = atoi(argv[2]);
+    }
+    return set_webrtc_bitrate(is_audio, bitrate);
+}
+
 static int capture_to_player_cli(int argc, char **argv)
 {
     return test_capture_to_player();
@@ -189,10 +207,15 @@ static int init_console()
             .help = "measure system loading\r\n",
             .func = measure_cli,
         },
-         {
+        {
             .command = "server",
             .help = "Select server\r\n",
             .func = server_cli,
+        },
+         {
+            .command = "bitrate",
+            .help = "Set audio or video bitrate\r\n",
+            .func = bitrate_cli,
         },
     };
     for (int i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++) {
@@ -213,6 +236,12 @@ static void thread_scheduler(const char *thread_name, media_lib_thread_cfg_t *sc
     }
 #ifdef WEBRTC_SUPPORT_OPUS
     else if (strcmp(thread_name, "aenc_0") == 0) {
+        // For OPUS encoder it need huge stack, when use G711 can set it to small value
+        schedule_cfg->stack_size = 40 * 1024;
+        schedule_cfg->priority = 10;
+        schedule_cfg->core_id = 1;
+    }
+    else if (strcmp(thread_name, "Adec") == 0) {
         // For OPUS encoder it need huge stack, when use G711 can set it to small value
         schedule_cfg->stack_size = 40 * 1024;
         schedule_cfg->priority = 10;
