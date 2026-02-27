@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.1
+
+### Bug Fixes
+
+- Fixed some turn server fail to connect due to user name too long
+
 ## v1.3.0~1
 
 ### Bug Fixes
