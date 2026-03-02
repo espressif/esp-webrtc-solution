@@ -1,0 +1,7 @@
+## IDF Component Manager Manifest File
+dependencies:
+  espressif/esp_capture: "*"
+  espressif/esp_media_protocols: "*"
+  ## Required IDF version
+  idf:
+    version: ">=4.1.0"
