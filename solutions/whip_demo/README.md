@@ -14,7 +14,7 @@ For testing, you can use [mediaMTX](https://github.com/bluenviron/mediamtx) as y
 
 ### Configuring mediaMTX
 
-1. **User Authentication**  
+1. **User Authentication**
    In your `mediamtx.yml` file, add user accounts:
    ```yaml
    authInternalUsers:
@@ -22,7 +22,7 @@ For testing, you can use [mediaMTX](https://github.com/bluenviron/mediamtx) as y
        pass: password
    ```
 
-2. **STUN/Relay Server**  
+2. **STUN/Relay Server**
    Add a STUN (or relay) server:
    ```yaml
    webrtcICEServers2:
@@ -37,13 +37,16 @@ You may use either the IDF master branch or the IDF release v5.4.
 
 ### Configuration Steps
 
-1. **Wi-Fi Settings**  
+1. **Wi-Fi Settings**
    Update the Wi-Fi SSID and password in [main/settings.h](main/settings.h).
 
-2. **WHIP Server Settings**  
+2. **WHIP Server Settings**
    Modify the WHIP server URL and access token in [main/settings.h](main/settings.h).
 
-3. **Support for Other Boards**  
+3. **ICE Lite Support**
+   Some WHIP servers may only support ICE Lite mode. Ensure to enable ICE Lite in [main/settings.h](main/settings.h) if required.
+
+4. **Support for Other Boards**
    For instructions on supporting other boards, see the [codec_board README](../../components/codec_board/README.md).
 
 ### Building and Flashing

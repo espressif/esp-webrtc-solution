@@ -12,6 +12,7 @@
 #include "common.h"
 #include "esp_log.h"
 #include "esp_webrtc_defaults.h"
+#include "esp_peer_default.h"
 #include "media_lib_os.h"
 
 #define TAG "WHIP_DEMO"
@@ -37,6 +38,11 @@ int start_webrtc(char *url, char *token)
         esp_webrtc_close(webrtc);
         webrtc = NULL;
     }
+    esp_peer_default_cfg_t peer_cfg = {
+#ifdef WEBRTC_USE_ICE_LITE
+        .ice_use_lite_mode = true,
+#endif
+    };
     esp_peer_signaling_whip_cfg_t whip_cfg = {
         .auth_type = ESP_PEER_SIGNALING_WHIP_AUTH_TYPE_BASIC,
         .token = token,
@@ -44,7 +50,9 @@ int start_webrtc(char *url, char *token)
     esp_webrtc_cfg_t cfg = {
         .peer_cfg = {
             .audio_info = {
-                .codec = ESP_PEER_AUDIO_CODEC_G711A,
+                .codec = ESP_PEER_AUDIO_CODEC_OPUS,
+                .sample_rate = 16000,
+                .channel = 1,
             },
             .video_info = {
                 .codec = ESP_PEER_VIDEO_CODEC_H264,
@@ -55,6 +63,8 @@ int start_webrtc(char *url, char *token)
             .audio_dir = ESP_PEER_MEDIA_DIR_SEND_ONLY,
             .video_dir = ESP_PEER_MEDIA_DIR_SEND_ONLY,
             .no_auto_reconnect = true, // No auto connect peer when signaling connected
+            .extra_cfg = &peer_cfg,
+            .extra_size = sizeof(peer_cfg),
         },
         .signaling_cfg = {
             .signal_url = url,
