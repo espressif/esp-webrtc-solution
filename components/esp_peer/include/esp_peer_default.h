@@ -67,6 +67,7 @@ typedef struct {
     uint8_t                         max_candidates;      /*!< Maximum ICE candidates to gather
                                                               Large setting will consume more heap memory
                                                               Defaults is 10 if set to 0 */
+    bool                           ice_use_lite_mode;    /**< Enable ICE Lite mode (simplified ICE for always-on servers) */
 } esp_peer_default_cfg_t;
 
 /**

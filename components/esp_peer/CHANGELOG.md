@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.3.2
+
+### Bug Fixes
+
+- Fixed auto disconnected from turn server after 10min due to no permission updated
+
+### Features
+
+- Added ICE lite support through configuration `ice_use_lite_mode`
+
 ## v1.3.1
 
 ### Bug Fixes

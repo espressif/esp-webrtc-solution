@@ -55,6 +55,16 @@ extern "C" {
  */
 #define WHIP_TOKEN "username:password"
 
+/**
+ * @brief  Enable ICE lite for WHIP
+ */
+#define WEBRTC_USE_ICE_LITE
+
+/**
+ * @brief  Use opus encoder
+ */
+#define WEBRTC_SUPPORT_OPUS
+
 #ifdef __cplusplus
 }
 #endif
