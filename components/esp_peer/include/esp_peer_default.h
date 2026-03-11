@@ -29,11 +29,12 @@ typedef struct {
  * @brief  Peer default jitter buffer configuration
  */
 typedef struct {
-    uint16_t  cache_timeout;  /*!< Maximum timeout to keep the received RTP packet (unit ms) default: 100ms if set to 0 */
-    uint16_t  resend_delay;   /*!< Not resend until resend delay reached (unit ms) default: 20ms if set to 0*/
-    uint32_t  cache_size;     /*!< Cache size for incoming data channel frame (unit Bytes)
-                                  For audio jitter buffer default: 100kB if set to 0
-                                  For video jitter buffer default: 400kB if set to 0 */
+    uint16_t  cache_timeout;     /*!< Maximum timeout to keep the received RTP packet (unit ms) default: 100ms if set to 0 */
+    uint16_t  resend_delay;      /*!< Not resend until resend delay reached (unit ms) default: 20ms if set to 0*/
+    uint16_t  pli_send_interval; /*!< Send RTCP PLI interval (unit ms), default: 0(disabled) */
+    uint32_t  cache_size;        /*!< Cache size for incoming data channel frame (unit Bytes)
+                                      For audio jitter buffer default: 100kB if set to 0
+                                      For video jitter buffer default: 400kB if set to 0 */
 } esp_peer_default_jitter_cfg_t;
 
 /**

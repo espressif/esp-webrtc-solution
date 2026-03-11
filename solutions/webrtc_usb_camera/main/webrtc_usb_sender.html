@@ -1,0 +1,290 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>ESP WebRTC USB Camera Sender</title>
+  <style>
+    body { font-family: sans-serif; max-width: 860px; margin: 16px auto; }
+    video { width: 100%; max-height: 420px; background: #111; }
+    .row { margin: 8px 0; }
+    input { width: 60%; padding: 8px; }
+    button { padding: 8px 12px; margin-right: 8px; }
+    pre { background: #f2f2f2; padding: 8px; min-height: 120px; }
+  </style>
+</head>
+<body>
+  <h2>ESP32 WebRTC -&gt; USB UVC Sender (AppRTC Signaling)</h2>
+  <div class="row">
+    <input id="server" placeholder="http://127.0.0.1:8080" />
+    <input id="room" placeholder="room id" value="esp_usb_demo" />
+  </div>
+  <div class="row">
+    <button id="start">Start</button>
+    <button id="stop">Stop / Leave</button>
+  </div>
+  <video id="localVideo" autoplay muted playsinline></video>
+  <pre id="log"></pre>
+
+<script>
+const logNode = document.getElementById('log');
+const log = (m) => { logNode.textContent += `[${new Date().toLocaleTimeString()}] ${m}\n`; logNode.scrollTop = logNode.scrollHeight; };
+
+let pc = null;
+let ws = null;
+let localStream = null;
+let heartbeatTimer = null;
+let serverUrl = '';
+let roomId = '';
+let clientId = '';
+let wssPostUrl = '';
+let isInitiator = false;
+let wsRegistered = false;
+let isLocal = false;
+
+(function initDefaultServer() {
+  const serverInput = document.getElementById('server');
+  isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  log(`IS local set to=${isLocal}`);
+  serverInput.value = !isLocal && window.location.origin.startsWith('http')
+    ? window.location.origin
+    : 'http://127.0.0.1:8080';
+})();
+
+function asObject(value) {
+  if (value == null) return {};
+  return typeof value === 'string' ? JSON.parse(value) : value;
+}
+
+function normalizeWebSocketUrl(url) {
+  const input = new URL(url, serverUrl);
+  if (window.location.protocol === 'https:' && input.protocol === 'ws:') {
+    input.protocol = 'wss:';
+  }
+  return input.toString();
+}
+
+function stopHeartbeat() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
+function startHeartbeat() {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ cmd: 'send', msg: JSON.stringify({ error: '' }) }));
+    }
+  }, 20000);
+}
+
+async function postMessageToRoom(msgObj) {
+  const msg = JSON.stringify(msgObj);
+  const url = `${serverUrl}/message/${roomId}/${clientId}`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: msg,
+  });
+  if (!resp.ok) {
+    throw new Error(`message failed: HTTP ${resp.status}`);
+  }
+}
+
+async function fetchIceServers(params) {
+  const defaultConfig = asObject(params.pc_config);
+  const iceServerUrl = params.ice_server_url ? new URL(params.ice_server_url, serverUrl).toString() : '';
+  if (!iceServerUrl) {
+    return defaultConfig;
+  }
+  try {
+    const resp = await fetch(iceServerUrl, { method: 'POST' });
+    if (!resp.ok) {
+      log(`ICE fetch fallback to pc_config, http=${resp.status}`);
+      return defaultConfig;
+    }
+    const iceData = await resp.json();
+    const servers = iceData.iceServers || defaultConfig.iceServers || [];
+    return {
+      ...defaultConfig,
+      iceServers: servers,
+    };
+  } catch (e) {
+    log(`ICE fetch fallback to pc_config, error=${e.message}`);
+    return defaultConfig;
+  }
+}
+
+async function handleSignalMessage(raw) {
+  const msg = asObject(raw);
+  if (!pc) return;
+  log(`handle msg type ${msg.type}`);
+
+  if (msg.type === 'offer') {
+    await pc.setRemoteDescription(msg);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await postMessageToRoom(answer);
+  } else if (msg.type === 'answer') {
+    await pc.setRemoteDescription(msg);
+  } else if (msg.type === 'candidate' && msg.candidate) {
+    await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+  } else if (msg.type === 'bye') {
+    log('Peer left room (BYE).');
+  }
+}
+
+function enableSmartGOPControl(pc, sender, intervalMs = 2000) {
+    let gopTimer = null;
+    // 檢查瀏覽器支援度
+    if (typeof sender.generateKeyFrame !== 'function') {
+      console.warn("瀏覽器不支援 generateKeyFrame");
+    }
+    gopTimer = setInterval(async () => {
+      try {
+        // 只有在狀態確實為 connected 時才執行
+        if (pc != null && pc.connectionState === 'connected') {
+          if (sender.generateKeyFrame) {
+            await sender.generateKeyFrame();
+          }
+        } else {
+          clearInterval(gopTimer);
+        }
+      } catch (e) {
+        console.error("GOP: 產生關鍵影格失敗", e);
+      }
+    }, intervalMs);
+ };
+
+async function start() {
+  serverUrl = document.getElementById('server').value.replace(/\/$/, '');
+  isLocal = ['localhost', '127.0.0.1'].some(host => serverUrl.includes(host));
+  roomId = document.getElementById('room').value.trim();
+  if (!roomId) {
+    log('Room id is required');
+    return;
+  }
+
+  const joinResp = await fetch(`${serverUrl}/join/${roomId}`, {
+    method: 'POST',
+    mode: 'cors',
+    cache: 'no-cache',
+  });
+  if (!joinResp.ok) {
+    throw new Error(`join request failed: HTTP ${joinResp.status}`);
+  }
+  const joinData = await joinResp.json();
+  if (joinData.result !== 'SUCCESS') {
+    throw new Error(`join room failed: ${JSON.stringify(joinData)}`);
+  }
+
+  const params = asObject(joinData.params);
+  isInitiator = params.is_initiator === 'true' || params.is_initiator === true;
+  clientId = params.client_id;
+  wssPostUrl = params.wss_post_url ? new URL(params.wss_post_url, serverUrl).toString() : '';
+
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: { width: 640, height: 480, frameRate: 30 },
+    audio: true,
+  });
+  document.getElementById('localVideo').srcObject = localStream;
+
+  const rtcConfig = await fetchIceServers(params);
+  pc = new RTCPeerConnection(rtcConfig);
+  localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
+
+  const sender = pc.getSenders().find(s => s.track?.kind === "video");
+  const send_params = sender.getParameters();
+  send_params.encodings[0].keyFrameInterval = 3;
+  enableSmartGOPControl(pc, sender);
+
+  pc.onicecandidate = async (event) => {
+    if (!event.candidate) return;
+    await postMessageToRoom({
+      type: 'candidate',
+      label: event.candidate.sdpMLineIndex,
+      id: event.candidate.sdpMid,
+      candidate: event.candidate.candidate,
+    });
+  };
+
+  pc.onconnectionstatechange = () => log(`connection: ${pc.connectionState}`);
+
+  const wsUrl = normalizeWebSocketUrl(params.wss_url);
+  ws = new WebSocket(wsUrl);
+  ws.onopen = () => {
+    log('ws opened');
+    if (!wsRegistered && !isLocal) {
+      wsRegistered = true;
+      log('Register when open');
+      ws.send(JSON.stringify({ cmd: 'register', roomid: roomId, clientid: clientId }));
+      startHeartbeat();
+    }
+  };
+
+  ws.onmessage = async (evt) => {
+    const data = asObject(evt.data);
+    if ((data.cmd === 'proxy_ready' || data.cmd === 'registered') && !wsRegistered) {
+      log('Register on websocket open');
+      wsRegistered = true;
+      ws.send(JSON.stringify({ cmd: 'register', roomid: roomId, clientid: clientId }));
+      startHeartbeat();
+      return;
+    }
+    if (data.msg) {
+      await handleSignalMessage(data.msg);
+    }
+  };
+  ws.onclose = () => {
+    stopHeartbeat();
+    log('ws closed');
+  };
+  for (const item of (params.messages || [])) {
+    await handleSignalMessage(item);
+  }
+
+  if (isInitiator) {
+    const offer = await pc.createOffer({ offerToReceiveAudio: false, offerToReceiveVideo: false });
+    await pc.setLocalDescription(offer);
+    await postMessageToRoom(offer);
+  }
+
+  log(`Joined room ${roomId}, initiator=${isInitiator}, ws=${wsUrl}`);
+}
+
+async function leaveRoom() {
+  if (!roomId || !clientId) return;
+  try {
+    if (ws) {
+      await ws.send(JSON.stringify({ cmd: 'send', msg: JSON.stringify({ type: 'bye' }) }));
+    }
+    await fetch(`${serverUrl}/leave/${roomId}/${clientId}`, { method: 'POST' });
+    if (wssPostUrl) {
+      await fetch(`${wssPostUrl}${roomId}/${clientId}`, { method: 'DELETE' });
+    }
+  } catch (e) {
+    log(`leave warning: ${e.message}`);
+  }
+}
+
+async function stop() {
+  await leaveRoom();
+  stopHeartbeat();
+  if (ws) { ws.close(); ws = null; }
+  wsRegistered = false;
+  if (pc) { pc.close(); pc = null; }
+  if (localStream) {
+    localStream.getTracks().forEach((t) => t.stop());
+    localStream = null;
+  }
+  clientId = '';
+  roomId = '';
+  log('stopped');
+}
+
+document.getElementById('start').onclick = () => start().catch((e) => log(`error: ${e.message}`));
+document.getElementById('stop').onclick = () => stop().catch((e) => log(`stop error: ${e.message}`));
+</script>
+</body>
+</html>
