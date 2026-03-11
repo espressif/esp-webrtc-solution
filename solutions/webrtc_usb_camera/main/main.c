@@ -1,3 +1,12 @@
+/* Main function
+
+   This example code is in the Public Domain (or CC0 licensed, at your option.)
+
+   Unless required by applicable law or agreed to in writing, this
+   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+   CONDITIONS OF ANY KIND, either express or implied.
+*/
+
 #include <esp_log.h>
 #include "esp_console.h"
 #include "media_lib_adapter.h"
@@ -24,7 +33,7 @@ static int start_bridge(int argc, char **argv)
 
 static int stop_bridge(int argc, char **argv)
 {
-    RUN_ASYNC(stop, { stop_webrtc(); });
+    RUN_ASYNC(stop, {stop_webrtc();});
     return 0;
 }
 
@@ -61,7 +70,7 @@ static int init_console(void)
 #elif CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     esp_console_dev_usb_serial_jtag_config_t usbjtag_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_console_new_repl_usb_serial_jtag(&usbjtag_config, &repl_config, &repl));
-#endif
+#endif  /* CONFIG_ESP_CONSOLE_UART */
 
     const esp_console_cmd_t cmds[] = {
         {.command = "start", .help = "start <room_id>", .func = start_bridge},

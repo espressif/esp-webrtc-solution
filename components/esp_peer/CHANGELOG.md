@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.3.3
+
+### Features
+
+- Support PLI interval setting so that can control browser key frame send behavior
+
 ## v1.3.2
 
 ### Bug Fixes

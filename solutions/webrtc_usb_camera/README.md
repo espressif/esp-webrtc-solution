@@ -1,68 +1,201 @@
-# WebRTC USB Camera Demo
+# WebRTC USB Camera Bridge Demo
 
 ## Overview
 
-This example shows how to build a **WebRTC-to-USB UVC bridge** with ESP32:
+This example shows how to turn an ESP32 device into a **WebRTC-to-USB UVC bridge**:
 
-- A PC browser page captures webcam + microphone.
-- The browser sends media over WebRTC using **AppRTC signaling**.
-- ESP32 receives the media stream with `esp_peer`.
-- The ESP32 forwards received **video frames** to a USB UVC device API, so a host PC can open it directly as a camera.
+- A browser captures webcam and microphone media.
+- The browser sends media to ESP32 through WebRTC (AppRTC signaling).
+- ESP32 receives the stream via `esp_peer`.
+- ESP32 forwards video frames to its USB UVC device interface.
+- A host PC sees ESP32 as a standard USB camera.
 
-> Current implementation forwards **video only** to UVC output. Incoming audio is negotiated and ignored.
+In short, this demo converts a WebRTC video stream into a plug-and-play USB webcam feed.
 
-## Hardware / Software Notes
+> Current status: only **video** is forwarded to UVC output.
+> Audio is negotiated in WebRTC but currently ignored.
 
-- Target boards: ESP32-S3 / ESP32-P4 (must support both Wi-Fi and USB device mode).
-- Signaling server: `https://webrtc.espressif.com` (AppRTC-compatible).
-- USB host side should see an extra UVC camera after `uvc_device_init()`.
+---
+
+## System Architecture
+
+```text
++--------------------+
+|  Browser (Sender)  |
+|--------------------|
+| Webcam + Mic       |
+| WebRTC Sender      |
++---------+----------+
+          |
+          | WebRTC (SRTP)
+          v
++--------------------+
+|       ESP32        |
+|--------------------|
+| esp_peer (WebRTC)  |
+| Video Frame Queue  |
+| UVC Device Driver  |
++---------+----------+
+          |
+          | USB UVC
+          v
++--------------------+
+|   Host Computer    |
+|--------------------|
+| Camera Application |
+| (OBS / VLC / etc.) |
++--------------------+
+```
+
+---
+
+## Requirements
+
+### Hardware
+
+Supported targets:
+
+- ESP32-S3
+- ESP32-P4
+
+Required capabilities:
+
+- Wi-Fi connectivity
+- USB device mode support
+
+### Software / Services
+
+- ESP-IDF build environment
+- AppRTC-compatible signaling server:
+  - <https://webrtc.espressif.com>
+
+The signaling server is used for SDP and ICE exchange, then peer connection setup.
+
+---
 
 ## Build and Flash
 
-1. Update Wi-Fi credentials in `main/settings.h`.
-2. Build and flash:
+### 1) Configure Wi-Fi
+
+Edit `main/settings.h`:
+
+```c
+#define WIFI_SSID "your_ssid"
+#define WIFI_PASS "your_password"
+```
+
+### 2) Build + flash + monitor
 
 ```bash
 idf.py -p YOUR_SERIAL_PORT flash monitor
 ```
 
-## Run
+After boot, the console shows system logs and WebRTC status.
 
-1. On ESP console:
-   - `start <room_id>`: join AppRTC room and start WebRTC receive.
-   - `stop`: stop signaling/peer connection.
-2. On PC browser:
-   - Open `main/webrtc_usb_sender.html`.
-   - Set the same room ID and click **Start**.
-3. On USB host (connected to ESP USB device port):
-   - Open the new UVC camera from any camera app (e.g. VLC, OBS, system camera app).
+---
 
-## AppRTC Origin/CORS Local Test Proxy
+## Run the Demo
 
-`webrtc.espressif.com` signaling does origin checks. For local validation before deploying sender HTML under the official namespace, use `main/apprtc_proxy.js`.
+### Step 1: Start ESP32 receiver
+
+In the ESP console:
+
+```bash
+start <room_id>
+```
+
+This command connects to signaling, joins the room, and waits for the browser peer.
+
+To stop:
+
+```bash
+stop
+```
+
+### Step 2: Start browser sender
+
+Open `main/webrtc_usb_sender.html` and set:
+
+- **Server**: `https://webrtc.espressif.com`
+- **Room ID**: same value used with `start <room_id>`
+
+Click **Start**. The browser captures local media and sends it to ESP32.
+
+### Step 3: Open the USB camera on host
+
+Connect ESP32 USB device port to the host PC.
+After `uvc_device_init()` completes, a new UVC camera should appear in the OS.
+
+You can test with:
+
+- OBS Studio
+- VLC
+- Zoom
+- System camera app
+
+---
+
+## Local AppRTC Proxy (CORS/Origin Workaround)
+
+`webrtc.espressif.com` may reject direct requests from local HTML pages due to origin checks.
+For local development, use the included proxy at `main/apprtc_proxy.js`.
 
 ### Start proxy
 
 ```bash
 cd solutions/webrtc_usb_camera/main
-npm i ws
+npm install ws
 node apprtc_proxy.js --port 8080
 ```
 
-### Use proxy from sender page
+### Sender page configuration
 
-- Open sender HTML from a browser.
-- Set **server** to `http://<proxy-ip>:8080`.
-- Use same `room_id` on ESP (`start <room_id>`).
+Set **Server** to:
 
-The proxy rewrites AppRTC URLs from `webrtc.espressif.com` to itself and relays the WebSocket signaling channel.
+```text
+http://<proxy-ip>:8080
+```
 
-## Design Notes
+The proxy rewrites AppRTC HTTP endpoints and relays WebSocket signaling.
 
-- WebRTC peer is configured as `video_dir = RECV_ONLY` and `audio_dir = RECV_ONLY`.
-- Received video frames are copied into a small pool and exposed via:
-  - `fb_get_cb` (UVC host asks next frame)
-  - `fb_return_cb` (UVC host releases frame)
-- The demo maps WebRTC codec to UVC format:
-  - H264 -> `UVC_FORMAT_H264`
-  - MJPEG -> `UVC_FORMAT_JPEG`
+---
+
+## Frame Flow and Buffers
+
+```text
+WebRTC Decoder
+      |
+      v
+Video Frame Buffer Pool
+      |
+      v
+UVC Device Driver
+      |
+      v
+USB Host Camera Client
+```
+
+Frame callback behavior:
+
+| Callback | Description |
+| --- | --- |
+| `fb_get_cb` | UVC driver requests the next video frame |
+| `fb_return_cb` | UVC driver releases the previous frame |
+
+A small reusable frame pool is used to reduce allocation overhead.
+
+---
+
+## Example Use Cases
+
+1. **Remote Camera Bridge**
+   Remote camera -> WebRTC -> ESP32 -> USB webcam on PC.
+
+2. **Browser Camera Virtualization**
+   Browser (camera/screen source) appears as a USB camera to desktop apps.
+
+3. **Wireless Webcam Adapter**
+   Convert Wi-Fi stream to USB webcam without custom host drivers.
+
+4. **Cloud Camera Gateway**
+   Forward remote streams across networks and present locally as UVC camera.
