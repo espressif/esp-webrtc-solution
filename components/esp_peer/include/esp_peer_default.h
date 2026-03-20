@@ -58,17 +58,22 @@ typedef struct {
  * @brief  Peer default configuration (optional)
  */
 typedef struct {
-    uint16_t                        agent_recv_timeout;  /*!< ICE agent receive timeout setting (unit ms)
-                                                              default: 100ms if set to 0
-                                                              Some STUN/TURN server reply message slow increase this value */
-    esp_peer_default_data_ch_cfg_t  data_ch_cfg;         /*!< Configuration of data channel */
-    esp_peer_default_rtp_cfg_t      rtp_cfg;             /*!< Configuration of RTP buffer */
-    bool                            keep_role;           /*!< Do not reset role to controlling when disconnected */
-    bool                            ipv6_support;        /*!< Support IPv6 */
-    uint8_t                         max_candidates;      /*!< Maximum ICE candidates to gather
-                                                              Large setting will consume more heap memory
-                                                              Defaults is 10 if set to 0 */
-    bool                           ice_use_lite_mode;    /**< Enable ICE Lite mode (simplified ICE for always-on servers) */
+    uint16_t                       agent_recv_timeout;    /*!< ICE agent receive timeout setting (unit ms)
+                                                               default: 100ms if set to 0
+                                                               Some STUN/TURN server reply message slow increase this value */
+    esp_peer_default_data_ch_cfg_t data_ch_cfg;           /*!< Configuration of data channel */
+    esp_peer_default_rtp_cfg_t     rtp_cfg;               /*!< Configuration of RTP buffer */
+    bool                           keep_role;             /*!< Do not reset role to controlling when disconnected */
+    bool                           ipv6_support;          /*!< Support IPv6 */
+    uint8_t                        max_candidates;        /*!< Maximum ICE candidates to gather
+                                                                Large setting will consume more heap memory
+                                                                Defaults is 16 if set to 0 */
+
+    uint8_t                        alive_binding_retries; /*!< Max retries for peer keepalive via STUN Binding requests.
+                                                               Sent every 6s; if no response after `alive_binding_retries` attempts,
+                                                               peer is marked disconnected.
+                                                               Default: 5 (0 = use default, 0xFF = disable check). */
+    bool                          ice_use_lite_mode;      /**< Enable ICE Lite mode (simplified ICE for always-on servers) */
 } esp_peer_default_cfg_t;
 
 /**
