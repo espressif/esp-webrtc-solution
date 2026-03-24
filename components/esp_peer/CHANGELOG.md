@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.3.4
+
+### Features
+
+- Added `alive_binding_retries` to configuration binding maximum retries before disconnected
+  - Binding retry is a keep alive mechanism to detect peer leave unexpected
+- Fixed connectivity check fail if remote candidate not acceptable (TCP etc)
+- Added video RTP RTX support
+
+### Bug Fixes
+
+- Fixed peer binding response discard if RTT over 400ms
+
 ## v1.3.3
 
 ### Features
