@@ -1,0 +1,13 @@
+## IDF Component Manager Manifest File
+dependencies:
+  ## Required IDF version
+  idf:
+    version: ">=5.0"
+  ## Import needed components only
+  espressif/esp_h264:
+    version: "1.0.4"
+    rules:
+    - if: target in [esp32p4, esp32s3]
+  kvs_signaling:
+    path: ../../../components/esp_webrtc/impl/kvs_signaling
+    version: "*"
