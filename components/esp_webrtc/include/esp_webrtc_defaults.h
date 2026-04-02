@@ -66,6 +66,15 @@ const esp_peer_signaling_impl_t *esp_signaling_get_whip_impl(void);
 const esp_peer_signaling_impl_t *esp_signaling_get_janus_impl(void);
 
 /**
+ * @brief  Get KVS signaling implementation
+ *
+ * @return
+ *       - NULL    Failure to get KVS signaling implementation
+ *       - Others  KVS signaling implementation pointer
+ */
+const esp_peer_signaling_impl_t *esp_signaling_get_kvs_impl(void);
+
+/**
  * @brief  Get default peer connection implementation
  * @return
  *       - NULL    No default implementation, or not enough memory

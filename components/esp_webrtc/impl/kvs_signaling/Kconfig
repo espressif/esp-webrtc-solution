@@ -1,0 +1,34 @@
+menu "KVS Signaling Configuration"
+
+    config KVS_AWS_ACCESS_KEY_ID
+        string "AWS Access Key ID"
+        default ""
+        help
+            AWS Access Key ID for KVS signaling authentication.
+
+    config KVS_AWS_SECRET_ACCESS_KEY
+        string "AWS Secret Access Key"
+        default ""
+        help
+            AWS Secret Access Key for KVS signaling authentication.
+
+    config KVS_AWS_SESSION_TOKEN
+        string "AWS Session Token"
+        default ""
+        help
+            AWS Session Token for temporary credentials. Leave empty if using
+            long-term credentials.
+
+    config KVS_AWS_REGION
+        string "AWS Region"
+        default "us-east-1"
+        help
+            AWS region for KVS service endpoint.
+
+    config KVS_CHANNEL_NAME
+        string "KVS Channel Name"
+        default "demo-channel"
+        help
+            Name of the KVS signaling channel to use.
+
+endmenu
