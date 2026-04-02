@@ -3,6 +3,7 @@ dependencies:
   ## Required IDF version
   idf:
     version: '>=5.0'
+  ## Import needed components only
   espressif/esp_h264:
     version: "1.0.4"
     rules:
@@ -11,3 +12,10 @@ dependencies:
     version: "^0.8.0"
     rules:
     - if: target in [esp32p4]
+  espressif/esp_peer:
+    version: "*"
+    override_path: ../../../components/esp_peer
+  espressif/apprtc_signal:
+    path: ../../../components/esp_webrtc/impl/apprtc_signal
+    version: "*"
+    override_path: ../../../components/esp_webrtc/impl/apprtc_signal

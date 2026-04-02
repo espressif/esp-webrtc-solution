@@ -6,4 +6,3 @@ idf_component_register(
     INCLUDE_DIRS ./
     REQUIRES json esp_http_client esp_websocket_client
 )
-

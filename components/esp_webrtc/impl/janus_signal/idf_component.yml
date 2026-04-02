@@ -1,0 +1,8 @@
+dependencies:
+  esp_webrtc:
+    path: ../../../esp_webrtc
+    version: "*"
+  espressif/esp_peer:
+    override_path: ../../../esp_peer
+    version: "*"
+    public: true
