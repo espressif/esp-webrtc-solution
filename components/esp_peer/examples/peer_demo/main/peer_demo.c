@@ -244,8 +244,6 @@ static int create_peer(int idx)
         peers[idx].peer_running = false;
         return -1;
     }
-    // Create connection
-    esp_peer_new_connection(peers[idx].peer);
     return 0;
 }
 
@@ -282,10 +280,14 @@ void app_main()
     uint32_t cur = esp_timer_get_time() / 1000;
     uint32_t end = cur + TEST_DURATION;
     int before_run = avail_mem();
-
+    esp_peer_pre_generate_cert();
     // Create 2 peers
     create_peer(0);
     create_peer(1);
+
+    // Delay to create connection only when both ready
+    esp_peer_new_connection(peers[0].peer);
+    esp_peer_new_connection(peers[1].peer);
     avail_mem();
 
     // Wait for test duration reached

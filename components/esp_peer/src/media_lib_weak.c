@@ -16,8 +16,6 @@
 
 #define WEAK __attribute__((weak))
 
-
-
 // Mock memory allocation functions
 void* WEAK media_lib_malloc(size_t size)
 {

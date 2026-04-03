@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.4.0
+
+### Features
+
+- Added ESP-IDF v6.0 support (backward compatible with IDF v5.x)
+- ICE Lite mode for non-initiator peers: Enabled answerer (non-offer SDP) to act as the controlling agent
+- RTP port parsing from SDP: Added support for FreeSWITCH WebRTC server compatibility
+- Refined DTLS pre-generate certification keys for faster session setup
+- Fixed premature ICE nomination
+  - Prevented use-candidate attribute from being signaled too early before final nomination
+
 ## v1.3.4
 
 ### Features
