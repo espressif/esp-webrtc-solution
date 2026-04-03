@@ -6,7 +6,7 @@ dependencies:
   espressif/nghttp: "~1.65.0"
   espressif/esp_websocket_client: "~1.4.0"
   espressif/esp_codec_dev: "~1.5"
-  espressif/esp_capture: "~0.7"
+  espressif/esp_capture: "~0.8"
   esp_peer:
     override_path: ../esp_peer
   tempotian/media_lib_sal:
