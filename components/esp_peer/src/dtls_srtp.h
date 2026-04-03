@@ -26,8 +26,12 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <mbedtls/entropy.h>
+#include "esp_idf_version.h"
+#if MBEDTLS_MAJOR_VERSION >= 4
+#include <mbedtls/private/ctr_drbg.h>
+#else
 #include <mbedtls/ctr_drbg.h>
+#endif
 #include <mbedtls/ssl.h>
 #include <mbedtls/ssl_cookie.h>
 #include <mbedtls/pk.h>
@@ -41,7 +45,7 @@
 extern "C" {
 #endif
 
-#define RSA_KEY_LENGTH                1024
+#define DTLS_CERT_PEM_BUF_SIZE        2048
 #define SRTP_MASTER_KEY_LENGTH        16
 #define SRTP_MASTER_SALT_LENGTH       14
 #define DTLS_SRTP_KEY_MATERIAL_LENGTH 60
@@ -75,7 +79,9 @@ typedef struct {
     mbedtls_ssl_cookie_ctx   cookie_ctx;
     mbedtls_x509_crt         cert;
     mbedtls_pk_context       pkey;
-    mbedtls_entropy_context  entropy;
+#if ESP_IDF_VERSION_MAJOR >= 6
+    mbedtls_svc_key_id_t     psa_key_id;
+#endif
     mbedtls_ctr_drbg_context ctr_drbg;
     dtls_srtp_role_t         role;
     dtls_srtp_state_t        state;
