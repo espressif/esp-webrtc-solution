@@ -3,7 +3,11 @@ dependencies:
   ## Required IDF version
   idf:
     version: ">=5.0"
+  ## Import needed components only
   espressif/esp_h264:
     version: "1.0.4"
     rules:
     - if: target in [esp32p4, esp32s3]
+  esp_peer:
+    override_path: ../../../components/esp_peer
+  ## Note: openai_signaling is implemented locally in openai_signaling.c

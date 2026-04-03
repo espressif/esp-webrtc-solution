@@ -1,4 +1,5 @@
 
+# Core esp_webrtc component sources only
 set(component_srcdirs "src")
 
 # AppRTC, Whip, Janus signalling

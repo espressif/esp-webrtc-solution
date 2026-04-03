@@ -3,7 +3,14 @@ dependencies:
   ## Required IDF version
   idf:
     version: ">=4.1.0"
+  ## Import needed components only
   espressif/esp_h264:
     version: "1.0.4"
     rules:
     - if: target in [esp32p4, esp32s3]
+  espressif/esp_peer:
+    version: "*"
+    override_path: ../../../components/esp_peer
+  whip_signal:
+    path: ../../../components/esp_webrtc/impl/whip_signal
+    version: "*"

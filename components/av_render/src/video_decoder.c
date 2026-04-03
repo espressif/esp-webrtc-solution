@@ -121,7 +121,12 @@ static int do_decode(vdec_t *vdec, av_render_video_data_t *data, av_render_video
         vdec->frame_info.height = frame_info.res.height;
         ESP_LOGI(TAG, "Video resolution %dx%d fmt:%d", (int)frame_info.res.width, (int)frame_info.res.height, vdec->dec_out_fmt);
         vdec->out_size = esp_video_codec_get_image_size(vdec->dec_out_fmt, &frame_info.res);
-        if ((vdec->frame_data == NULL && vdec->fb_cb.fb_fetch == NULL) || vdec->need_clr_convert) {
+        /* Only allocate out_data if:
+         * 1. No frame_data is set AND no fb_fetch callback is available, OR
+         * 2. Color conversion is needed BUT frame_data is not set (frame_data can be used for decoder output even with color conversion)
+         * This allows pre-allocated frame_data from SPIRAM to be used instead of allocating from internal RAM
+         */
+        if ((vdec->frame_data == NULL && vdec->fb_cb.fb_fetch == NULL) || (vdec->need_clr_convert && vdec->frame_data == NULL)) {
             // TODO this middle buffer not needed if can get decoder output frame directly
             vdec->out_data = esp_video_codec_align_alloc(vdec->out_frame_align, vdec->out_size, &vdec->out_size);
             if (vdec->out_data == NULL) {
@@ -142,12 +147,20 @@ static int do_decode(vdec_t *vdec, av_render_video_data_t *data, av_render_video
                 return -1;
             }
             vdec->raw_buffer_size = esp_video_codec_get_image_size(get_out_fmt(vdec->frame_info.type), &frame_info.res);
-            if (vdec->fb_cb.fb_fetch == NULL && vdec->raw_buffer == NULL) {
-                vdec->raw_buffer = (uint8_t *)malloc(vdec->raw_buffer_size);
+            /* Always allocate raw_buffer as fallback - fb_fetch may fail if data queue is too small */
+            /* This ensures we have a buffer even if fb_fetch returns NULL */
+            if (vdec->raw_buffer == NULL) {
+                /* Use SPIRAM for raw_buffer allocation - RGB565 buffer is too large for internal RAM */
+                /* Cache-align for potential cache sync operations (64-byte alignment) */
+                const size_t cache_line_size = 64;
+                size_t aligned_size = ((vdec->raw_buffer_size + cache_line_size - 1) / cache_line_size) * cache_line_size;
+                vdec->raw_buffer = (uint8_t *)heap_caps_aligned_alloc(cache_line_size, aligned_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
                 if (vdec->raw_buffer == NULL) {
-                    ESP_LOGE(TAG, "Fail to allocate convert output");
+                    ESP_LOGE(TAG, "Fail to allocate cache-aligned convert output from SPIRAM (size: %d, aligned: %zu)",
+                             (int)vdec->raw_buffer_size, aligned_size);
                     return ESP_MEDIA_ERR_NO_MEM;
                 }
+                vdec->raw_buffer_size = aligned_size;  /* Use aligned size for cache sync */
             }
         }
         vdec->header_parsed = true;
@@ -169,7 +182,14 @@ static int do_decode(vdec_t *vdec, av_render_video_data_t *data, av_render_video
         printf("%02x %02x %02x %02x\n", CC(data->data));
 #define CC1(a, size) a[size - 4], a[size - 3], a[size - 2], a[size - 1]
         printf("Tail %02x %02x %02x %02x\n", CC1(data->data, data->size));
-        ESP_LOGE(TAG, "Fail to decode data ret %d", ret);
+        ESP_LOGE(TAG, "Failed to decode data: ret %d (header_parsed=%d, pts=%" PRIu32 ", key_frame=%d)",
+                 ret, vdec->header_parsed, data->pts, data->key_frame);
+        /* Check if this is likely due to missing SPS/PPS or corrupted decoder state */
+        if (!vdec->header_parsed) {
+            ESP_LOGE(TAG, "Decoder header not parsed - SPS/PPS may be missing or invalid");
+        } else {
+            ESP_LOGE(TAG, "Decoder header was parsed but decode failed - decoder state may be corrupted");
+        }
         if (vdec->fb_cb.fb_fetch && vdec->need_clr_convert == false) {
             vdec->fb_cb.fb_return(decoded_frame.data, true, vdec->fb_cb.ctx);
         }
@@ -183,17 +203,29 @@ static int do_decode(vdec_t *vdec, av_render_video_data_t *data, av_render_video
     }
 
     uint8_t *out_data = vdec->frame_data ? vdec->frame_data : vdec->raw_buffer;
+    bool using_fb_buffer = false;  /* Track if we're using a buffer from fb_fetch */
     if (vdec->fb_cb.fb_fetch) {
-        out_data = vdec->fb_cb.fb_fetch(vdec->out_frame_align, vdec->raw_buffer_size, vdec->fb_cb.ctx);
-        if (out_data == NULL) {
-            return ESP_MEDIA_ERR_NO_MEM;
+        uint8_t *fb_data = vdec->fb_cb.fb_fetch(vdec->out_frame_align, vdec->raw_buffer_size, vdec->fb_cb.ctx);
+        /* Fallback to raw_buffer if fb_fetch fails (e.g., data queue too small) */
+        if (fb_data == NULL) {
+            ESP_LOGW(TAG, "fb_fetch returned NULL, falling back to raw_buffer");
+            out_data = vdec->raw_buffer;
+            if (out_data == NULL) {
+                ESP_LOGE(TAG, "raw_buffer is also NULL - cannot decode");
+                return ESP_MEDIA_ERR_NO_MEM;
+            }
+            using_fb_buffer = false;  /* Using raw_buffer, not fb_fetch */
+        } else {
+            out_data = fb_data;
+            using_fb_buffer = true;  /* Using buffer from fb_fetch */
         }
     }
     ret = convert_color(vdec->convert_table, decoded_frame.data, decoded_frame.decoded_size,
                         out_data, vdec->raw_buffer_size);
     if (ret != 0) {
         ESP_LOGE(TAG, "Fail to convert color");
-        if (vdec->fb_cb.fb_fetch) {
+        /* Only call fb_return if we're using a buffer from fb_fetch */
+        if (using_fb_buffer && vdec->fb_cb.fb_return) {
             vdec->fb_cb.fb_return(out_data, true, vdec->fb_cb.ctx);
         }
         return ret;
@@ -315,7 +347,11 @@ int vdec_decode(vdec_handle_t h, av_render_video_data_t *data)
     if (ret == 0 && vdec->frame_cb) {
         vdec->header_parsed = true;
         vdec->frame_cb(&out_frame, vdec->ctx);
-        if (vdec->fb_cb.fb_fetch && out_frame.data) {
+        /* Only call fb_return if the buffer came from fb_fetch, not from raw_buffer or frame_data */
+        /* Check if out_frame->data is NOT raw_buffer and NOT frame_data to determine if it came from fb_fetch */
+        if (vdec->fb_cb.fb_fetch && out_frame.data &&
+            out_frame.data != vdec->raw_buffer &&
+            out_frame.data != vdec->frame_data) {
             vdec->fb_cb.fb_return(out_frame.data, false, vdec->fb_cb.ctx);
         }
     }
@@ -368,7 +404,7 @@ int vdec_close(vdec_handle_t h)
         vdec->convert_table = NULL;
     }
     if (vdec->raw_buffer) {
-        free(vdec->raw_buffer);
+        heap_caps_free(vdec->raw_buffer);
         vdec->raw_buffer = NULL;
     }
     media_lib_free(vdec);

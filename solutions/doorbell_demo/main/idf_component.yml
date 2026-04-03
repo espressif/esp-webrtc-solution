@@ -8,3 +8,9 @@ dependencies:
     version: "1.0.4"
     rules:
     - if: target in [esp32p4, esp32s3]
+  espressif/esp_peer:
+    version: "*"
+    override_path: ../../../components/esp_peer
+  apprtc_signal:
+    path: ../../../components/esp_webrtc/impl/apprtc_signal
+    version: "*"
