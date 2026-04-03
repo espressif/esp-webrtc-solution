@@ -24,5 +24,4 @@ void init_board()
     // Notes when use playback and record at same time, must set reuse_dev = false
     codec_init_cfg_t cfg = { .reuse_dev = false };
     init_codec(&cfg);
-    board_lcd_init();
 }

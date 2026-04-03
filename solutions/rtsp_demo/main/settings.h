@@ -40,8 +40,8 @@ extern "C" {
 #endif
 
 #define AUDIO_FORMAT      ESP_CAPTURE_FMT_ID_AAC
-#define AUDIO_SAMPLE_RATE 16000
-#define AUDIO_CHANNEL     2
+#define AUDIO_SAMPLE_RATE 8000
+#define AUDIO_CHANNEL     1
 
 #define MAX_VIDEO_FRAME_SIZE 600*1024
 
