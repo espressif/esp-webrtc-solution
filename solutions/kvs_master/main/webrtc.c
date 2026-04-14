@@ -8,7 +8,6 @@
 */
 
 #include "esp_webrtc.h"
-#include "media_lib_os.h"
 #include "common.h"
 #include "esp_log.h"
 #include "esp_webrtc_defaults.h"
@@ -47,6 +46,10 @@ int start_webrtc(char *url)
 
     esp_peer_default_cfg_t peer_cfg = {
         .agent_recv_timeout = 500,
+        // KVS master is always the answerer (Controlled). Prevent esp_peer from
+        // resetting to Controlling after a viewer disconnects so the next offer
+        // is processed correctly.
+        .keep_role = true,
     };
     esp_webrtc_cfg_t cfg = {
         .peer_cfg = {
@@ -68,9 +71,6 @@ int start_webrtc(char *url)
             .audio_dir = ESP_PEER_MEDIA_DIR_SEND_RECV,
             .video_dir = ESP_PEER_MEDIA_DIR_SEND_RECV,
             .enable_data_channel = DATA_CHANNEL_ENABLED,
-            // Note: no_auto_reconnect is not set (defaults to false)
-            // For KVS, peer connection is created automatically when ICE info is received
-            // KVS MASTER receives offer from VIEWER and sends answer (is_initiator=false)
             .extra_cfg = &peer_cfg,
             .extra_size = sizeof(peer_cfg),
         },

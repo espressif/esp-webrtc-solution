@@ -226,6 +226,7 @@ static int on_text(void *user, const char *text, size_t len)
             msg = cJSON_GetObjectItem(_json, "senderClientId");
             if (msg != NULL) {
                 ESP_LOGI(TAG, "Received msg from client %s", msg->valuestring);
+                free(sg->client_info.client_id);
                 sg->client_info.client_id = strdup(msg->valuestring);
             }
             msg = cJSON_GetObjectItem(_json, "messageType");
