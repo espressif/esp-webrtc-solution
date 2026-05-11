@@ -1,0 +1,16 @@
+## IDF Component Manager Manifest File
+description: Media Library Utilities
+version: 0.9.0
+url: "https://github.com/espressif/esp-webrtc-solution/tree/main/components/media_lib_utils"
+documentation: "https://github.com/espressif/esp-webrtc-solution/tree/main/components/media_lib_utils/README.md"
+issues: "https://github.com/espressif/esp-webrtc-solution/issues"
+
+tags:
+   - "Multimedia"
+   - "Utilities"
+   - "System"
+
+dependencies:
+  espressif/media_lib_sal:
+    require: public
+    version: "~0.9"

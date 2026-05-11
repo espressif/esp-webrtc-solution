@@ -1,7 +1,7 @@
 /**
  * ESPRESSIF MIT License
  *
- * Copyright (c) 2025 <ESPRESSIF SYSTEMS (SHANGHAI) CO., LTD>
+ * Copyright (c) 2026 <ESPRESSIF SYSTEMS (SHANGHAI) CO., LTD>
  *
  * Permission is hereby granted for use on all ESPRESSIF SYSTEMS products, in which case,
  * it is free of charge, to any person obtaining a copy of this software and associated
@@ -22,13 +22,13 @@
  *
  */
 
-#include "msg_q.h"
-#include "string.h"
-#include "stdio.h"
-#include "stdlib.h"
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
-#include "pthread.h"
-#include "stdbool.h"
+#include <pthread.h>
+#include <stdbool.h>
+#include "msg_q.h"
 
 typedef struct msg_q_t {
    pthread_mutex_t data_mutex;
@@ -106,13 +106,10 @@ int msg_q_send(msg_q_handle_t q, void* msg, int size) {
     if (q) {
         int ret = 0;
         if (size > q->each_size) {
-            //printf("msgsize %d too big than %d\n", size, q->each_size);
             return -1;
         }
         pthread_mutex_lock(&(q->data_mutex));
-        //printf("msg buffer %s filled %d total:%d\n", q->name, q->filled, q->number);
         while (q->quit == false && q->filled >= q->number && q->reset == false) {
-            //printf("msg buffer %s full\n", q->name);
             q->user++;
             pthread_cond_wait(&(q->data_cond), &(q->data_mutex));
             q->user--;
@@ -124,7 +121,6 @@ int msg_q_send(msg_q_handle_t q, void* msg, int size) {
             int idx = (q->cur + q->filled) % q->number;
             memcpy(q->data[idx], msg, size);
             q->filled++;
-            // printf("Send q %s OK have: %d\n", q->name, q->filled);
         }
         else {
             ret = -2;
@@ -143,7 +139,6 @@ int msg_q_recv(msg_q_handle_t q, void* msg, int size, bool no_wait) {
     if (q) {
         int ret = 0;
         if (size > q->each_size) {
-            printf("msgsize %d too big than %d\n", size, q->each_size);
             return -1;
         }
         pthread_mutex_lock(&(q->data_mutex));
@@ -153,14 +148,11 @@ int msg_q_recv(msg_q_handle_t q, void* msg, int size, bool no_wait) {
                 return 1;
             }
             q->user++;
-            //printf("msg buffer %s empty\n", q->name);
             ret = pthread_cond_wait(&(q->data_cond), &(q->data_mutex));
-            //printf("msg buffer %s reset:%d\n", q->name, q->reset);
             q->user--;
         }
         if (q->quit == false && q->reset == false) {
             memcpy(msg, q->data[q->cur], size);
-            // printf("Recv q %s OK have: %d\n", q->name, q->filled);
             q->filled--;
             q->cur++;
             q->cur %= q->number;
@@ -169,7 +161,6 @@ int msg_q_recv(msg_q_handle_t q, void* msg, int size, bool no_wait) {
             if (q->reset) {
                 q->reset = false;
             }
-            printf("recv after destroy\n");
             ret = -2;
         }
         pthread_mutex_unlock(&(q->data_mutex));
@@ -178,7 +169,6 @@ int msg_q_recv(msg_q_handle_t q, void* msg, int size, bool no_wait) {
         }
         return ret;
     }
-    printf("q not created\n");
     return -1;
 }
 
@@ -201,7 +191,6 @@ int msg_q_reset(msg_q_handle_t q) {
     if (q) {
         while (q->user) {
             pthread_mutex_lock(&(q->data_mutex));
-            //printf("reset msg %s\n", q->name);
             q->reset = true;
             pthread_cond_broadcast(&(q->data_cond));
             pthread_mutex_unlock(&(q->data_mutex));
@@ -211,7 +200,6 @@ int msg_q_reset(msg_q_handle_t q) {
         q->cur = 0;
         q->filled = 0;
         pthread_mutex_unlock(&(q->data_mutex));
-        //printf("reset Finished %s\n", q->name);
     }
     return 0;
 }
@@ -219,7 +207,6 @@ int msg_q_reset(msg_q_handle_t q) {
 int msg_q_wakeup(msg_q_handle_t q) {
     if (q) {
         pthread_mutex_lock(&(q->data_mutex));
-        //printf("reset msg %s\n", q->name);
         q->reset = true;
         pthread_cond_signal(&(q->data_cond));
         pthread_mutex_unlock(&(q->data_mutex));
@@ -229,7 +216,6 @@ int msg_q_wakeup(msg_q_handle_t q) {
         pthread_mutex_lock(&(q->data_mutex));
         q->reset = false;
         pthread_mutex_unlock(&(q->data_mutex));
-        //printf("reset Finished %s\n", q->name);
     }
     return 0;
 }
@@ -244,36 +230,6 @@ int msg_q_number(msg_q_handle_t q) {
     return n;
 }
 
-#if 0
-int msg_q_sort(msg_q_t*q, msg_q_cmp cmp_func, void* tag) {
-    if (q) {
-        pthread_mutex_lock(&(q->data_mutex));
-        int total_swap = 0;
-        if (q->filled > 1) {
-            int i, j;
-            for (i = 0; i < q->filled - 1; i++) {
-               int swap = 0;
-               for (j = 0; j < q->filled -1 -i; j++) {
-                   int a = (j + q->cur) % q->number;
-                   int b = (j + 1+ q->cur) % q->number;
-                   void* cmp_a = q->data[a];
-                   void* cmp_b = q->data[b];
-                   if (cmp_func(cmp_a, cmp_b, tag) > 0) {
-                       q->data[a] = cmp_b;
-                       q->data[b] = cmp_a;
-                       swap++;
-                   }
-               }
-               total_swap += swap;
-               if (swap == 0) break;
-            }
-            printf("have video frame:%d swap:%d\n", q->filled, total_swap);
-        }
-        pthread_mutex_unlock(&(q->data_mutex));
-    }
-    return 0;
-}
-#endif
 
 void msg_q_destroy(msg_q_handle_t q) {
     if (q) {
@@ -297,4 +253,3 @@ void msg_q_destroy(msg_q_handle_t q) {
         free(q);
     }
 }
-

@@ -7,4 +7,4 @@ dependencies:
   espressif/esp_capture: "~0.7"
   tempotian/av_render:
     override_path: ../../../../av_render
-  tempotian/media_lib_sal: "~0.9"
+  tempotian/media_lib_utils: "~0.9"
