@@ -1,7 +1,6 @@
 dependencies:
   espressif/media_lib_sal:
     version: "*"
-    override_path: ../../../media_lib_sal
   espressif/esp_peer:
     override_path: ../../../esp_peer
     version: "*"

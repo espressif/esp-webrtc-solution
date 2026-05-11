@@ -16,8 +16,8 @@ dependencies:
       override_path: ../../../components/codec_board
   tempotian/esp_webrtc:
       override_path: ../../../components/esp_webrtc
-  tempotian/media_lib_sal:
-      override_path: ../../../components/media_lib_sal
+  tempotian/media_lib_utils:
+      override_path: ../../../components/media_lib_utils
   tempotian/av_render:
       override_path: ../../../components/av_render
   esp_peer:
