@@ -9,7 +9,7 @@ dependencies:
     rules:
     - if: target in [esp32p4, esp32s3]
   espressif/pedestrian_detect:
-    version: "^0.2.0"
+    version: "^0.3.0"
     rules:
       - if: target in [esp32p4, esp32s3]
   tempotian/codec_board:

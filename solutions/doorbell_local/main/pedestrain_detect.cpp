@@ -51,7 +51,7 @@ static void detecting_task(void *arg)
                 .data = (void *)frame->data,
                 .width = DETECT_WIDTH,
                 .height = DETECT_HEIGHT,
-                .pix_type = dl::image::DL_IMAGE_PIX_TYPE_RGB565,
+                .pix_type = dl::image::DL_IMAGE_PIX_TYPE_RGB565LE,
             };
             auto &detect_results = detect_lib->run(img);
             data_queue_read_unlock(detect->q);
