@@ -19,6 +19,9 @@ extern "C" {
 #include "sys_state.h"
 #include "esp_webrtc.h"
 
+#define OPENAI_DEFAULT_MODEL "gpt-realtime-2"
+#define OPENAI_DEFAULT_VOICE "alloy"
+
 /**
  * @brief  Initialize board
  */
@@ -27,10 +30,11 @@ void init_board(void);
 /**
  * @brief  OpenAI signaling configuration
  *
- * @note   Details see: https://platform.openai.com/docs/api-reference/realtime-sessions/create#realtime-sessions-create-voice
+ * @note   Details see: https://platform.openai.com/docs/guides/realtime-webrtc
  */
 typedef struct {
    char *token; /*!< OpenAI token */
+   char *model; /*!< Realtime model to use */
    char *voice; /*!< Voice to select */
 } openai_signaling_cfg_t;
 

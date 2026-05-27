@@ -4,6 +4,8 @@
 
 This demo showcases the use of `esp_webrtc` to establish a real-time chat connection with OpenAI. It also demonstrates how to utilize voice commands for device control through function calls.
 
+This demo uses the OpenAI Realtime GA WebRTC ephemeral token flow. It first creates a short-lived client secret with `POST /v1/realtime/client_secrets`, then exchanges SDP through `POST /v1/realtime/calls` using that token.
+
 ## Comparison with OpenAI Realtime Embedded SDK
 
 This demo provides functionality similar to the [OpenAI Realtime Embedded SDK](https://github.com/openai/openai-realtime-embedded-sdk), with several enhancements:
@@ -50,5 +52,6 @@ The demo code add some predefined function call for light on off, light color, s
 User can use voice command to trigger the function call.
 
 ## Technical Details
-  To connect to OpenAI, this example adds a customized signaling realization `esp_signaling_get_openai_signaling`. It does not use a STUN/TURN server, and thus the `on_ice_info` will have `stun_url` set to `NULL`. The SDP information is exchanged through http posts through `https_post` API. All other steps follow the typical call flow of `esp_webrtc`.  
-  For more details on the standard connection build flow, refer to the [Connection Build Flow](../../components/esp_webrtc/README.md#typical-call-sequence-of-esp_webrtc).
+To connect to OpenAI, this example adds a customized signaling realization `esp_signaling_get_openai_signaling`. It does not use a STUN/TURN server, and thus the `on_ice_info` will have `stun_url` set to `NULL`. The signaling first uses the configured API key to request an ephemeral token from `/v1/realtime/client_secrets`; the SDP information is then exchanged with `/v1/realtime/calls` using that temporary token. All other steps follow the typical call flow of `esp_webrtc`.
+
+For more details on the standard connection build flow, refer to the [Connection Build Flow](../../components/esp_webrtc/README.md#typical-call-sequence-of-esp_webrtc).
