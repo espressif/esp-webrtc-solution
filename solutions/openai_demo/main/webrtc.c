@@ -529,9 +529,12 @@ int start_webrtc(void)
     }
     esp_peer_default_cfg_t peer_cfg = {
         .agent_recv_timeout = 500,
+        .ice_use_lite_mode = true,
     };
     openai_signaling_cfg_t openai_cfg = {
         .token = OPENAI_API_KEY,
+        .model = OPENAI_DEFAULT_MODEL,
+        .voice = OPENAI_DEFAULT_VOICE,
     };
     esp_webrtc_cfg_t cfg = {
         .peer_cfg = {
