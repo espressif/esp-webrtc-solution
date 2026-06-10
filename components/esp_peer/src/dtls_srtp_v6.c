@@ -34,9 +34,9 @@ static int dtls_srtp_selfsign_cert(dtls_srtp_t *dtls_srtp, bool export_for_cache
         ret = -1;
         goto _exit;
     }
-    psa_set_key_type(&attributes, PSA_KEY_TYPE_RSA_KEY_PAIR);
-    psa_set_key_bits(&attributes, 1024);
-    psa_set_key_algorithm(&attributes, PSA_ALG_RSA_PKCS1V15_SIGN(PSA_ALG_SHA_256));
+    psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
+    psa_set_key_bits(&attributes, 256);
+    psa_set_key_algorithm(&attributes, PSA_ALG_ECDSA(PSA_ALG_SHA_256));
     psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_HASH | PSA_KEY_USAGE_VERIFY_HASH | PSA_KEY_USAGE_EXPORT);
     status = psa_generate_key(&attributes, &dtls_srtp->psa_key_id);
     if (status != PSA_SUCCESS) {
@@ -247,6 +247,7 @@ void dtls_srtp_deinit(dtls_srtp_t *dtls_srtp)
     }
     check_srtp(false);
     dtls_srtp->state = DTLS_SRTP_STATE_NONE;
+    media_lib_free(dtls_srtp);
 }
 
 void dtls_srtp_reset_session(dtls_srtp_t *dtls_srtp, dtls_srtp_role_t role)

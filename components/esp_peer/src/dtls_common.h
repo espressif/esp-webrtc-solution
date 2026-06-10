@@ -276,7 +276,8 @@ int dtls_srtp_read(dtls_srtp_t *dtls_srtp, unsigned char *buf, size_t len)
         if (ret > 0) {
             read_bytes += ret;
             continue;
-        } else if (ret == 0 || ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
+        } else if (ret == 0 || ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY ||
+                   ret == MBEDTLS_ERR_SSL_CLIENT_RECONNECT) {
             ESP_LOGE(TAG, "Detected DTLS connection close ret %d", ret);
             ret = MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY;
             break;

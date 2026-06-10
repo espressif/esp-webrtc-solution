@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.4.2
+
+### Features
+
+- Added re-negotiation support when SDP changed during connected
+- Add ECDSA 256 support
+
+### Bug Fixes
+
+- Fixed nominate candidate too early when act as controlled
+- Treat DTLS role as client when peer send `actpass`
+- Treat `MBEDTLS_ERR_SSL_CLIENT_RECONNECT` as disconnected
+- Fixed un-reliable data channel failed to open due to DCEP message not retransmitted
+- Fixed memory leakage due to DTLS resource not free
+
 ## v1.4.1
 
 ### Features

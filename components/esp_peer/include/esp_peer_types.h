@@ -72,6 +72,7 @@ typedef struct {
 
 /**
  * @brief  Peer RTP transform callback
+ *         Implement according https://www.w3.org/TR/webrtc-encoded-transform/#scriptTransform
  */
 typedef struct {
     /**
