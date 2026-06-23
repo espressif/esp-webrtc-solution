@@ -6,6 +6,7 @@
  */
 
 #include "dtls_common.h"
+#include "mbedtls/ecp.h"
 
 static int dtls_srtp_selfsign_cert(dtls_srtp_t *dtls_srtp, bool export_for_cache)
 {
@@ -24,15 +25,15 @@ static int dtls_srtp_selfsign_cert(dtls_srtp_t *dtls_srtp, bool export_for_cache
         ESP_LOGE(TAG, "mbedtls_ctr_drbg_seed failed, ret=%d", ret);
         goto _exit;
     }
-    ret = mbedtls_pk_setup(&dtls_srtp->pkey, mbedtls_pk_info_from_type(MBEDTLS_PK_RSA));
+    ret = mbedtls_pk_setup(&dtls_srtp->pkey, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY));
     if (ret != 0) {
-        ESP_LOGE(TAG, "mbedtls_pk_setup(RSA) failed, ret=%d", ret);
+        ESP_LOGE(TAG, "mbedtls_pk_setup(ECKEY) failed, ret=%d", ret);
         goto _exit;
     }
-    ret = mbedtls_rsa_gen_key(mbedtls_pk_rsa(dtls_srtp->pkey), mbedtls_ctr_drbg_random, &dtls_srtp->ctr_drbg, 1024,
-                              65537);
+    ret = mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP256R1, mbedtls_pk_ec(dtls_srtp->pkey),
+                              mbedtls_ctr_drbg_random, &dtls_srtp->ctr_drbg);
     if (ret != 0) {
-        ESP_LOGE(TAG, "mbedtls_rsa_gen_key failed, ret=%d", ret);
+        ESP_LOGE(TAG, "mbedtls_ecp_gen_key failed, ret=%d", ret);
         goto _exit;
     }
 
@@ -230,6 +231,7 @@ void dtls_srtp_deinit(dtls_srtp_t *dtls_srtp)
     }
     check_srtp(false);
     dtls_srtp->state = DTLS_SRTP_STATE_NONE;
+    media_lib_free(dtls_srtp);
 }
 
 void dtls_srtp_reset_session(dtls_srtp_t *dtls_srtp, dtls_srtp_role_t role)

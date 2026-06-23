@@ -7,6 +7,7 @@ if("${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" VERSION_GREATER_EQUAL "6.0")
 else()
   list(APPEND COMPONENT_SRCS "src/dtls_srtp.c")
 endif()
+list(APPEND COMPONENT_SRCS "src/peer_utils.c")
 
 idf_component_register(INCLUDE_DIRS ./include
                        SRCS ${COMPONENT_SRCS}

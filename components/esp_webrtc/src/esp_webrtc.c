@@ -196,6 +196,9 @@ void media_send_task(void *arg)
 static int start_stream(webrtc_t *rtc)
 {
     int ret = esp_capture_start(rtc->media_provider.capture);
+    if (rtc->no_auto_capture) {
+        esp_capture_sink_enable(rtc->capture_path, ESP_CAPTURE_RUN_MODE_ALWAYS);
+    }
     if (ret == ESP_CAPTURE_ERR_OK) {
         media_lib_thread_handle_t handle = NULL;
         rtc->send_going = true;
@@ -630,7 +633,9 @@ static int pc_start(webrtc_t *rtc, esp_peer_ice_server_cfg_t *server_info, int s
     }
     esp_capture_sink_setup(rtc->media_provider.capture, 0, &sink_cfg, &rtc->capture_path);
     pc_apply_capture_pre_setting(rtc, WEBRTC_PRE_SETTING_MASK_ALL);
-    esp_capture_sink_enable(rtc->capture_path, ESP_CAPTURE_RUN_MODE_ALWAYS);
+    if (rtc->no_auto_capture == false) {
+        esp_capture_sink_enable(rtc->capture_path, ESP_CAPTURE_RUN_MODE_ALWAYS);
+    }
     return ret;
 }
 

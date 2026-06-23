@@ -17,19 +17,23 @@ extern "C" {
  * @brief  Peer state
  */
 typedef enum {
-    ESP_PEER_STATE_CLOSED                    = 0,  /*!< Closed */
-    ESP_PEER_STATE_DISCONNECTED              = 1,  /*!< Disconnected */
-    ESP_PEER_STATE_NEW_CONNECTION            = 2,  /*!< New connection coming */
-    ESP_PEER_STATE_CANDIDATE_GATHERING       = 3,  /*!< Starting to get candidates */
-    ESP_PEER_STATE_PAIRING                   = 4,  /*!< Under candidate pairing */
-    ESP_PEER_STATE_PAIRED                    = 5,  /*!< Candidate pairing success */
-    ESP_PEER_STATE_CONNECTING                = 6,  /*!< Building connection with peer */
-    ESP_PEER_STATE_CONNECTED                 = 7,  /*!< Connected with peer */
-    ESP_PEER_STATE_CONNECT_FAILED            = 8,  /*!< Connect failed */
-    ESP_PEER_STATE_DATA_CHANNEL_CONNECTED    = 9,  /*!< Data channel is connected */
-    ESP_PEER_STATE_DATA_CHANNEL_OPENED       = 10, /*!< Data channel is opened */
-    ESP_PEER_STATE_DATA_CHANNEL_CLOSED       = 11, /*!< Data channel is closed */
-    ESP_PEER_STATE_DATA_CHANNEL_DISCONNECTED = 12, /*!< Data channel is disconnected */
+    ESP_PEER_STATE_CLOSED                     = 0,  /*!< Closed */
+    ESP_PEER_STATE_DISCONNECTED               = 1,  /*!< Disconnected */
+    ESP_PEER_STATE_NEW_CONNECTION             = 2,  /*!< New connection coming */
+    ESP_PEER_STATE_CANDIDATE_GATHERING        = 3,  /*!< Starting to get candidates */
+    ESP_PEER_STATE_PAIRING                    = 4,  /*!< Under candidate pairing */
+    ESP_PEER_STATE_PAIRED                     = 5,  /*!< Candidate pairing success */
+    ESP_PEER_STATE_CONNECTING                 = 6,  /*!< Building connection with peer */
+    ESP_PEER_STATE_CONNECTED                  = 7,  /*!< Connected with peer */
+    ESP_PEER_STATE_CONNECT_FAILED             = 8,  /*!< Connect failed */
+    ESP_PEER_STATE_DATA_CHANNEL_CONNECTED     = 9,  /*!< Data channel is connected */
+    ESP_PEER_STATE_DATA_CHANNEL_OPENED        = 10, /*!< Data channel is opened */
+    ESP_PEER_STATE_DATA_CHANNEL_CLOSED        = 11, /*!< Data channel is closed */
+    ESP_PEER_STATE_DATA_CHANNEL_DISCONNECTED  = 12, /*!< Data channel is disconnected */
+    ESP_PEER_STATE_REMOTE_AUDIO_TRACK_ADDED   = 13, /*!< Remote audio track is added */
+    ESP_PEER_STATE_REMOTE_AUDIO_TRACK_REMOVED = 14, /*!< Remote audio track is removed */
+    ESP_PEER_STATE_REMOTE_VIDEO_TRACK_ADDED   = 15, /*!< Remote video track is added */
+    ESP_PEER_STATE_REMOTE_VIDEO_TRACK_REMOVED = 16, /*!< Remote video track is removed */
 } esp_peer_state_t;
 
 /**
