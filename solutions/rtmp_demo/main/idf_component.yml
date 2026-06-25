@@ -1,0 +1,4 @@
+## IDF Component Manager Manifest File
+dependencies:
+  espressif/esp_capture: "~1.0"
+  espressif/esp_media_protocols: "~0.6"

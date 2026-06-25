@@ -44,3 +44,4 @@ Additionally, the repository contains demo applications under `solutions/` that 
 |--------|-------------|
 | [`webrtc_usb_camera`](solutions/webrtc_usb_camera/) | WebRTC-to-**USB UVC** bridge: browser sends media over WebRTC; host sees the device as a USB webcam (video path; see demo README). |
 | [`rtsp_demo`](solutions/rtsp_demo/) | **RTSP** server or pusher on the device for LAN streaming (complements WebRTC/media examples). |
+| [`rtmp_demo`](solutions/rtmp_demo/) | **RTMP** pusher that captures device audio/video and publishes to an RTMP server. |
