@@ -80,7 +80,7 @@ static int peer_state_handler(esp_peer_state_t state, void* ctx)
 {
     if (state == ESP_PEER_STATE_CONNECTED) {
         if (timer == NULL) {
-            esp_timer_create_args_t cfg = { 
+            esp_timer_create_args_t cfg = {
                 .callback = send_cb,
                 .name = "send",
             };
@@ -166,7 +166,10 @@ static int signaling_ice_info_handler(esp_peer_signaling_ice_info_t* info, void*
 {
     if (peer == NULL) {
         esp_peer_default_cfg_t peer_cfg = {
+            .tcp_support = true,
             .agent_recv_timeout = 500,
+            /* Lab/testing: the bundled coturn uses a self-signed cert for TURNS. */
+            .insecure_skip_turn_cert_verify = true,
         };
         esp_peer_cfg_t cfg = {
             .server_lists = &info->server_info,
@@ -220,6 +223,10 @@ static int signaling_msg_handler(esp_peer_signaling_msg_t* msg, void* ctx)
         if (peer) {
             esp_peer_send_msg(peer, (esp_peer_msg_t*)msg);
         }
+    } else if (msg->type == ESP_PEER_SIGNALING_MSG_CANDIDATE) {
+        if (peer) {
+            esp_peer_send_msg(peer, (esp_peer_msg_t*)msg);
+        }
     }
     return 0;
 }
@@ -249,7 +256,7 @@ int start_webrtc(char *url)
         return -1;
     }
     stop_webrtc();
-    return start_signaling(url);    
+    return start_signaling(url);
 }
 
 void query_webrtc(void)

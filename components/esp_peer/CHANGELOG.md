@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.0
+
+### Features
+
+- Added TCP and TURNS support for agent
+
 ## v1.4.2
 
 ### Features

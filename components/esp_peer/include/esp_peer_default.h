@@ -65,15 +65,22 @@ typedef struct {
     esp_peer_default_rtp_cfg_t     rtp_cfg;               /*!< Configuration of RTP buffer */
     bool                           keep_role;             /*!< Do not reset role to controlling when disconnected */
     bool                           ipv6_support;          /*!< Support IPv6 */
+    bool                           tcp_support;           /*!< Support TCP ICE host candidates and TCP data transport */
     uint8_t                        max_candidates;        /*!< Maximum ICE candidates to gather
                                                                 Large setting will consume more heap memory
                                                                 Defaults is 16 if set to 0 */
+    uint8_t                        max_tcp_connections;   /*!< Maximum TCP connections when TCP support is enabled.
+                                                               Defaults to 4 if set to 0 */
 
     uint8_t                        alive_binding_retries; /*!< Max retries for peer keepalive via STUN Binding requests.
                                                                Sent every 6s; if no response after `alive_binding_retries` attempts,
                                                                peer is marked disconnected.
                                                                Default: 5 (0 = use default, 0xFF = disable check). */
     bool                          ice_use_lite_mode;      /**< Enable ICE Lite mode (simplified ICE for always-on servers) */
+    bool                          insecure_skip_turn_cert_verify; /*!< INSECURE: skip TURNS (TURN-over-TLS) server certificate
+                                                                       verification. Only enable for lab/testing against a TURN server
+                                                                       with a self-signed certificate. On ESP targets this additionally
+                                                                       requires CONFIG_ESP_TLS_INSECURE=y and CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY=y in sdkconfig. */
 } esp_peer_default_cfg_t;
 
 /**
