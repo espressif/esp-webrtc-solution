@@ -16,8 +16,12 @@
 static int start_chat(int argc, char **argv)
 {
     if (argc > 1) {
-        static char url[128];
-        snprintf(url, sizeof(url), "https://webrtc.espressif.com/join/%s", argv[1]);
+        static char url[160];
+        if (strncmp(argv[1], "http://", 7) == 0 || strncmp(argv[1], "https://", 8) == 0) {
+            snprintf(url, sizeof(url), "%s", argv[1]);
+        } else {
+            snprintf(url, sizeof(url), "https://webrtc.espressif.com/join/%s", argv[1]);
+        }
         start_webrtc(url);
     }
     return 0;

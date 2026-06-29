@@ -18,6 +18,11 @@ CONFIG_MBEDTLS_SSL_PROTO_DTLS=y
 CONFIG_MBEDTLS_SSL_DTLS_SRTP=y
 CONFIG_MBEDTLS_X509_CREATE_C=y
 
+# Allow TURNS (TURN-over-TLS) against a self-signed TURN server (lab/testing only).
+# Required by esp_peer_default_cfg_t.insecure_skip_turn_cert_verify on ESP targets.
+CONFIG_ESP_TLS_INSECURE=y
+CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY=y
+
 # Use new I2C master
 CONFIG_CODEC_I2C_BACKWARD_COMPATIBLE=n
 

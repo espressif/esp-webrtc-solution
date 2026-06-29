@@ -35,6 +35,8 @@ int media_lib_mutex_lock(media_lib_mutex_handle_t mutex, uint32_t timeout);
 
 int media_lib_mutex_unlock(media_lib_mutex_handle_t mutex);
 
+void media_lib_thread_sleep(int ms);
+
 #ifdef __cplusplus
 }
 #endif
