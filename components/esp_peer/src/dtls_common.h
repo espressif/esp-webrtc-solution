@@ -114,6 +114,17 @@ static void dtls_srtp_key_derivation(void *context, mbedtls_ssl_key_export_type 
     (void)secret_type;
     memcpy(randbytes, client_random, 32);
     memcpy(randbytes + 32, server_random, 32);
+#ifdef DUMP_DTLS_KEY
+    printf("CLIENT_RANDOM ");
+    for (int i = 0; i < 32; i++) {
+        printf("%02x", client_random[i]);
+    }
+    printf(" ");
+    for (int i = 0; i < (int)secret_len; i++) {
+        printf("%02x", secret[i]);
+    }
+    printf("\n\n");
+#endif
 
     if ((ret = mbedtls_ssl_tls_prf(tls_prf_type, secret, secret_len, dtls_srtp_label, randbytes, sizeof(randbytes),
                                    key_material, sizeof(key_material)))
