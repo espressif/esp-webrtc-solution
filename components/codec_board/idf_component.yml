@@ -1,14 +1,14 @@
 ## IDF Component Manager Manifest File
-version: "2.0.1"
+version: "2.0.2"
 description: Simple ESP32 series codec board realization
 url: https://github.com/espressif/esp-webrtc-solution/tree/main/components/codec_board
 dependencies:
   espressif/esp_codec_dev: "~1.5"
-  esp_lcd_ek79007:
-    version: "~1.0.2"
+  espressif/esp_lcd_ek79007:
+    version: "~2.0.2"
     rules:
       - if: "target in [esp32p4]"
   espressif/esp_lcd_ili9881c:
-    version: "~1.0.1"
+    version: "~1.1.0"
     rules:
       - if: "target in [esp32p4]"

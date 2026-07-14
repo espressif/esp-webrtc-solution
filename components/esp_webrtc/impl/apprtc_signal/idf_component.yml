@@ -4,6 +4,8 @@ dependencies:
   espressif/esp_peer:
     override_path: ../../../esp_peer
     version: "*"
+  espressif/cjson:
+    version: "~1.7"
 
   # local component
   esp_webrtc:

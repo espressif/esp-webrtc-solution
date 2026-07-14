@@ -70,6 +70,7 @@ typedef enum {
     CODEC_TYPE_ES7210, /*!< ES7210 codec type */
     CODEC_TYPE_ES7243, /*!< ES7243 codec type */
     CODEC_TYPE_ES8388, /*!< ES8388 codec type */
+    CODEC_TYPE_ES8389, /*!< ES8389 codec type */
     CODEC_TYPE_DUMMY,  /*!< Dummy codec type (which have I2S interface only) */
 } codec_type_t;
 
@@ -182,15 +183,16 @@ typedef enum {
  * @brief  SPI LCD configuration
  */
 typedef struct {
-    uint8_t spi_bus;    /*!< SPI bus number */
-    int     pclk_clk;   /*!< PCLK clock */
-    uint8_t cmd_bits;   /*!< Command bit width */
-    uint8_t param_bits; /*!< Parameter bit width */
-    int16_t cs;         /*!< CS GPIO */
-    int16_t dc;         /*!< DC GPIO */
-    int16_t clk;        /*!< Clock GPIO */
-    int16_t mosi;       /*!< MOSI GPIO */
-    int16_t d[7];       /*!< Data GPIOs */
+    uint8_t  spi_bus;    /*!< SPI bus number */
+    int      pclk_clk;   /*!< PCLK clock */
+    uint8_t  cmd_bits;   /*!< Command bit width */
+    uint8_t  param_bits; /*!< Parameter bit width */
+    int16_t  cs;         /*!< CS GPIO */
+    int16_t  dc;         /*!< DC GPIO */
+    int16_t  clk;        /*!< Clock GPIO */
+    int16_t  mosi;       /*!< MOSI GPIO */
+    int16_t  d[7];       /*!< Data GPIOs */
+    uint32_t trans_sz;  /*!< Transfer size */
 } lcd_spi_cfg_t;
 
 /**
@@ -213,6 +215,29 @@ typedef struct {
 } lcd_mipi_cfg_t;
 
 /**
+ * @brief  RGB LCD configuration
+ */
+typedef struct {
+    uint8_t  data_width;         /*!< RGB data bus width */
+    uint8_t  fb_num;             /*!< Frame buffer number */
+    uint32_t pclk_hz;            /*!< Pixel clock in Hz */
+    uint16_t hsync_pulse_width;  /*!< HSYNC pulse width */
+    uint16_t hsync_back_porch;   /*!< HSYNC back porch */
+    uint16_t hsync_front_porch;  /*!< HSYNC front porch */
+    uint16_t vsync_pulse_width;  /*!< VSYNC pulse width */
+    uint16_t vsync_back_porch;   /*!< VSYNC back porch */
+    uint16_t vsync_front_porch;  /*!< VSYNC front porch */
+    int16_t  hsync;              /*!< HSYNC GPIO */
+    int16_t  vsync;              /*!< VSYNC GPIO */
+    int16_t  de;                 /*!< DE GPIO */
+    int16_t  pclk;               /*!< PCLK GPIO */
+    int16_t  disp;               /*!< Display enable GPIO */
+    int16_t  data[16];           /*!< RGB data GPIOs */
+    uint8_t  pclk_active_neg : 1; /*!< PCLK active on falling edge */
+    uint8_t  fb_in_psram     : 1; /*!< Allocate frame buffer in PSRAM */
+} lcd_rgb_cfg_t;
+
+/**
  * @brief LCD configuration
  */
 typedef struct {
@@ -232,6 +257,7 @@ typedef struct {
     union {
         lcd_spi_cfg_t  spi_cfg;
         lcd_mipi_cfg_t mipi_cfg;
+        lcd_rgb_cfg_t  rgb_cfg;
     };
 } lcd_cfg_t;
 

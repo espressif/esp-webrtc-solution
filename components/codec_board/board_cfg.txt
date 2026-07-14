@@ -131,3 +131,22 @@ lcd: {
     ctrl: -1, rst: 15,
     cs: 18, dc: 19, clk: 17, mosi: 16, cmd_bits: 8, param_bits: 8
 }
+
+
+Board: ESP32_S31_KORVO_1
+i2c: {sda: 0, scl: 1}
+i2s: {mclk: -1, bclk: 3, ws: 4, dout: 5, din: 6}
+in_out: {codec: ES8389, pa: 7, pa_gain:6, i2c_addr: 0x20}
+sdcard: {power: 39, clk: 24, cmd: 25, d0: 20, d1: 21, d2: 22, d3: 23}
+camera: {type: dvp, reset: 60, xclk: 55, pclk: 54, vsync: 56, de: 57, d0: 46, d1: 47, d2: 48, d3: 49, d4: 50, d5: 51, d6: 52, d7: 53}
+lcd: {
+    bus: rgb,
+    width: 800, height: 480,
+    hsync: 44, vsync: 45, de: 43, pclk: 40, disp: -1,
+    d0: 8, d1: 9, d2: 10, d3: 11, d4: 12, d5: 13, d6: 14, d7: 15,
+    d8: 16, d9: 17, d10: 18, d11: 19, d12: 33, d13: 34, d14: 35, d15: 36,
+    pclk_hz: 18000000, data_width: 16, fb_num: 1,
+    hsync_pulse_width: 1, hsync_back_porch: 40, hsync_front_porch: 20,
+    vsync_pulse_width: 1, vsync_back_porch: 10, vsync_front_porch: 5,
+    pclk_active_neg: 1, fb_in_psram: 1
+}

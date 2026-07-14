@@ -3,8 +3,10 @@ dependencies:
   ## Required IDF version
   idf:
     version: ">=4.1.0"
-  tempotian/codec_board: "~1.0"
-  espressif/esp_capture: "~0.7"
+  tempotian/codec_board:
+    version: "~2.0"
+    override_path: ../../../../codec_board
+  espressif/esp_capture: "~1.0"
   tempotian/av_render:
     override_path: ../../../../av_render
   tempotian/media_lib_utils: "~0.9"

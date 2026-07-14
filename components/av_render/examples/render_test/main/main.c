@@ -14,7 +14,7 @@
 #include "esp_codec_dev.h"
 #include "codec_init.h"
 #include "codec_board.h"
-#if CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
 #include "esp_video_init.h"
 #endif
 #include "av_render.h"
@@ -56,7 +56,10 @@ static void init_board()
 {
     ESP_LOGI(TAG, "Init board.");
     set_codec_board_type(TEST_BOARD_NAME);
-    codec_init_cfg_t cfg = {.reuse_dev = false};
+    codec_init_cfg_t cfg = {
+        .reuse_dev = false,
+        .in_mode = CODEC_I2S_MODE_TDM,
+    };
     init_codec(&cfg);
     board_lcd_init();
 }
@@ -96,10 +99,15 @@ static esp_capture_video_src_if_t *create_video_source(void)
     if (ret != 0) {
         return NULL;
     }
-#if CONFIG_IDF_TARGET_ESP32P4
-    esp_video_init_csi_config_t csi_config = { 0 };
+    esp_capture_video_v4l2_src_cfg_t v4l2_cfg = {
+        .dev_name = "/dev/video0",
+        .buf_count = 2,
+    };
+#if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
     esp_video_init_dvp_config_t dvp_config = { 0 };
     esp_video_init_config_t cam_config = { 0 };
+#if CONFIG_IDF_TARGET_ESP32P4
+    esp_video_init_csi_config_t csi_config = { 0 };
     if (cam_pin_cfg.type == CAMERA_TYPE_MIPI) {
         csi_config.sccb_config.i2c_handle = get_i2c_bus_handle(0);
         csi_config.sccb_config.freq = 100000;
@@ -107,7 +115,11 @@ static esp_capture_video_src_if_t *create_video_source(void)
         csi_config.pwdn_pin = cam_pin_cfg.pwr;
         ESP_LOGI(TAG, "Use i2c handle %p", csi_config.sccb_config.i2c_handle);
         cam_config.csi = &csi_config;
-    } else if (cam_pin_cfg.type == CAMERA_TYPE_DVP) {
+    } else
+#endif
+    if (cam_pin_cfg.type == CAMERA_TYPE_DVP) {
+        dvp_config.sccb_config.i2c_handle = get_i2c_bus_handle(0);
+        dvp_config.sccb_config.freq = 100000;
         dvp_config.reset_pin = cam_pin_cfg.reset;
         dvp_config.pwdn_pin = cam_pin_cfg.pwr;
         dvp_config.dvp_pin.data_width = CAM_CTLR_DATA_WIDTH_8;
@@ -125,16 +137,13 @@ static esp_capture_video_src_if_t *create_video_source(void)
         dvp_config.dvp_pin.de_io = cam_pin_cfg.de;
         dvp_config.xclk_freq = 20000000;
         cam_config.dvp = &dvp_config;
+        strncpy(v4l2_cfg.dev_name, "/dev/video2", sizeof(v4l2_cfg.dev_name));
     }
     ret = esp_video_init(&cam_config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Camera init failed with error 0x%x", ret);
         return NULL;
     }
-    esp_capture_video_v4l2_src_cfg_t v4l2_cfg = {
-        .dev_name = "/dev/video0",
-        .buf_count = 2,
-    };
     return esp_capture_new_video_v4l2_src(&v4l2_cfg);
 #endif
 
@@ -173,6 +182,7 @@ static int build_capture_system(void)
     };
     capture_sys.aud_src = esp_capture_new_audio_dev_src(&codec_cfg);
     RET_ON_NULL(capture_sys.aud_src, -1);
+    esp_codec_dev_set_in_gain(get_record_handle(), 32);
     // Create capture system
     esp_capture_cfg_t cfg = {
         .sync_mode = ESP_CAPTURE_SYNC_MODE_AUDIO,
@@ -194,8 +204,15 @@ static int build_player_system(void)
         ESP_LOGE(TAG, "Fail to create audio render");
         return -1;
     }
+    esp_codec_dev_set_out_vol(get_playback_handle(), 80);
     lcd_render_cfg_t lcd_cfg = {
         .lcd_handle = board_get_lcd_handle(),
+#if CONFIG_IDF_TARGET_ESP32S31
+        .rgb_panel = true,
+#endif
+#if CONFIG_IDF_TARGET_ESP32P4
+        .dsi_panel = true,
+#endif
     };
     player_sys.video_render = av_render_alloc_lcd_render(&lcd_cfg);
     if (player_sys.video_render == NULL) {
@@ -215,6 +232,12 @@ static int build_player_system(void)
         ESP_LOGE(TAG, "Fail to create player");
         return -1;
     }
+    esp_codec_dev_sample_info_t fs = {
+        .sample_rate = 16000,
+        .channel = 2,
+        .bits_per_sample = 16,
+    };
+    esp_codec_dev_open(get_playback_handle(), &fs);
     return 0;
 }
 
@@ -236,13 +259,13 @@ esp_capture_sink_handle_t setup_capture_sink(void)
 {
     esp_capture_sink_cfg_t sink_cfg = {
         .audio_info = {
-            .format_id = ESP_CAPTURE_FMT_ID_G711A,
-            .sample_rate = 8000,
-            .channel = 1,
+            .format_id = ESP_CAPTURE_FMT_ID_AAC,
+            .sample_rate = 16000,
+            .channel = 2,
             .bits_per_sample = 16,
         },
         .video_info = {
-            .format_id = ESP_CAPTURE_FMT_ID_MJPEG,
+            .format_id = ESP_CAPTURE_FMT_ID_RGB565,
             .width = VIDEO_WIDTH,
             .height = VIDEO_HEIGHT,
             .fps = VIDEO_FPS
@@ -262,14 +285,17 @@ static int test_capture_to_player(int duration)
 
     // Create player
     av_render_audio_info_t render_aud_info = {
-        .codec = AV_RENDER_AUDIO_CODEC_G711A,
-        .sample_rate = 8000,
-        .channel = 1,
+        .codec = AV_RENDER_AUDIO_CODEC_AAC,
+        .sample_rate = 16000,
+        .channel = 2,
+        .bits_per_sample = 16,
     };
     av_render_add_audio_stream(player_sys.player, &render_aud_info);
 
     av_render_video_info_t render_vid_info = {
-        .codec = AV_RENDER_VIDEO_CODEC_MJPEG,
+        .codec = AV_RENDER_VIDEO_CODEC_RGB565,
+        .width = VIDEO_WIDTH,
+        .height = VIDEO_HEIGHT
     };
     av_render_add_video_stream(player_sys.player, &render_vid_info);
 

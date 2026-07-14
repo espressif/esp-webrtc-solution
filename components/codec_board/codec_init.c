@@ -441,6 +441,20 @@ int init_codec(codec_init_cfg_t *cfg)
                 };
                 codec_res.out_codec_if = es8388_codec_new(&es8388_cfg);
             } break;
+
+            case CODEC_TYPE_ES8389: {
+                i2c_cfg.addr = out_cfg.i2c_addr ? out_cfg.i2c_addr : ES8389_CODEC_DEFAULT_ADDR;
+                codec_res.out_ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
+                es8389_codec_cfg_t es8389_cfg = {
+                    .codec_mode = same_codec ? ESP_CODEC_DEV_WORK_MODE_BOTH : ESP_CODEC_DEV_WORK_MODE_DAC,
+                    .ctrl_if = codec_res.out_ctrl_if,
+                    .gpio_if = codec_res.gpio_if,
+                    .pa_pin = out_cfg.pa_pin,
+                    .use_mclk = out_cfg.use_mclk,
+                    .hw_gain.pa_gain = out_cfg.pa_gain,
+                };
+                codec_res.out_codec_if = es8389_codec_new(&es8389_cfg);
+            } break;
             case CODEC_TYPE_DUMMY: {
                 dummy_codec_cfg_t dummy_cfg = {
                     .gpio_if = codec_res.gpio_if,
