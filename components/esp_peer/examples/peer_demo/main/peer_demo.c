@@ -11,15 +11,20 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_peer_default.h"
+#ifndef CONFIG_HEAP_TRACING_OFF
+#include "esp_heap_trace.h"
+#endif
+#include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_random.h"
 #include "esp_log.h"
 
 #define TAG "PEER_DEMO"
 
-#define TEST_DURATION (10000)
+#define TEST_DURATION (5000)
 #define PERIOD_CAT    (1100)
 #define PERIOD_SHEEP  (900)
+#define NUM_RECORDS   (200)
 
 typedef struct {
     esp_peer_handle_t  peer;
@@ -107,7 +112,9 @@ static int peer_msg_handler(esp_peer_msg_t *msg, void *ctx)
         peer_info_t *peer_info = (peer_info_t *)ctx;
         // Exchange SDP with peer
         esp_peer_handle_t peer = (peer_info == &peers[0]) ? peers[1].peer : peers[0].peer;
-        esp_peer_send_msg(peer, (esp_peer_msg_t *)msg);
+        if (peer) {
+            esp_peer_send_msg(peer, (esp_peer_msg_t *)msg);
+        }
     }
     return 0;
 }
@@ -138,6 +145,9 @@ static int peer_data_handler(esp_peer_data_frame_t *frame, void *ctx)
 {
     int ans = -1;
     peer_info_t *peer_info = (peer_info_t *)ctx;
+    if (peer_info->peer == NULL) {
+        return 0;
+    }
     int name_len = (peer_info == &peers[0]) ? strlen(peers[1].name) : strlen(peers[0].name);
     name_len += 2;
     // Check whether is question
@@ -184,6 +194,34 @@ static int avail_mem(void)
     ESP_LOGI(TAG, "MEM Avail:%d\n", left_size);
 #endif
     return left_size;
+}
+
+static void sys_state_heap_trace(bool start)
+{
+#if (defined CONFIG_IDF_TARGET_ESP32S3) && (!defined CONFIG_HEAP_TRACING_OFF)
+    static heap_trace_record_t *trace_record;
+    if (trace_record == NULL) {
+        trace_record = heap_caps_malloc(NUM_RECORDS * sizeof(heap_trace_record_t), MALLOC_CAP_SPIRAM);
+        heap_trace_init_standalone(trace_record, NUM_RECORDS);
+    }
+    if (trace_record == NULL) {
+        ESP_LOGE(TAG, "No memory to start trace");
+        return;
+    }
+    static bool started = false;
+    if (start) {
+        ESP_LOGI(TAG, "Start to trace");
+        if (started == false) {
+            heap_trace_start(HEAP_TRACE_LEAKS);
+            started = true;
+        } else {
+            heap_trace_resume();
+        }
+    } else {
+        heap_trace_alloc_pause();
+        heap_trace_dump();
+    }
+#endif
 }
 
 static int create_peer(int idx)
@@ -277,30 +315,42 @@ void app_main()
     // Create SoftAP
     wifi_init_softap();
 
-    uint32_t cur = esp_timer_get_time() / 1000;
-    uint32_t end = cur + TEST_DURATION;
-    int before_run = avail_mem();
     esp_peer_pre_generate_cert();
-    // Create 2 peers
-    create_peer(0);
-    create_peer(1);
 
-    // Delay to create connection only when both ready
-    esp_peer_new_connection(peers[0].peer);
-    esp_peer_new_connection(peers[1].peer);
-    avail_mem();
 
-    // Wait for test duration reached
-    while (cur < end) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        cur = esp_timer_get_time() / 1000;
+    sys_state_heap_trace(true);
+
+    for (int i = 0; i < 30; i++) {
+        int before_run = avail_mem();
+        // Create 2 peers (tasks already running)
+        int ret = create_peer(0);
+        ret |= create_peer(1);
+
+        // Delay to create connection only when both ready
+        if (ret == 0) {
+            esp_peer_new_connection(peers[0].peer);
+            esp_peer_new_connection(peers[1].peer);
+        }
+        avail_mem();
+        uint32_t cur = esp_timer_get_time() / 1000;
+        uint32_t end = cur + TEST_DURATION;
+
+        // Wait for test duration reached
+        while (ret == 0 && cur < end) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            cur = esp_timer_get_time() / 1000;
+        }
+        // Destroy 2 peers (keep tasks)
+        int after_run = avail_mem();
+        destroy_peer(0);
+        destroy_peer(1);
+
+        int after_stop = avail_mem();
+        ESP_LOGI(TAG, "Dual PeerConenction used memory %d kept %d",
+                after_stop - after_run, before_run - after_stop);
+        if (ret) {
+            break;
+        }
     }
-    // Destroy 2 peers
-    int after_run = avail_mem();
-    destroy_peer(0);
-    destroy_peer(1);
-
-    int after_stop = avail_mem();
-    ESP_LOGI(TAG, "Dual PeerConenction used memory %d kept %d",
-             after_stop - after_run, before_run - after_stop);
+    sys_state_heap_trace(false);
 }
