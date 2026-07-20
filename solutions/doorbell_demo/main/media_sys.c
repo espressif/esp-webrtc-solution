@@ -9,7 +9,7 @@
 
 #include "codec_init.h"
 #include "codec_board.h"
-#if CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
 #include "esp_video_init.h"
 #endif
 #include "av_render.h"
@@ -63,10 +63,15 @@ static esp_capture_video_src_if_t *create_video_source(void)
     if (ret != 0) {
         return NULL;
     }
-#if CONFIG_IDF_TARGET_ESP32P4
-    esp_video_init_csi_config_t csi_config = { 0 };
+    esp_capture_video_v4l2_src_cfg_t v4l2_cfg = {
+        .dev_name = "/dev/video0",
+        .buf_count = 2,
+    };
+#if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
     esp_video_init_dvp_config_t dvp_config = { 0 };
     esp_video_init_config_t cam_config = { 0 };
+#if CONFIG_IDF_TARGET_ESP32P4
+    esp_video_init_csi_config_t csi_config = { 0 };
     if (cam_pin_cfg.type == CAMERA_TYPE_MIPI) {
         csi_config.sccb_config.i2c_handle = get_i2c_bus_handle(0);
         csi_config.sccb_config.freq = 100000;
@@ -74,7 +79,11 @@ static esp_capture_video_src_if_t *create_video_source(void)
         csi_config.pwdn_pin = cam_pin_cfg.pwr;
         ESP_LOGI(TAG, "Use i2c handle %p", csi_config.sccb_config.i2c_handle);
         cam_config.csi = &csi_config;
-    } else if (cam_pin_cfg.type == CAMERA_TYPE_DVP) {
+    } else
+#endif
+    if (cam_pin_cfg.type == CAMERA_TYPE_DVP) {
+        dvp_config.sccb_config.i2c_handle = get_i2c_bus_handle(0);
+        dvp_config.sccb_config.freq = 100000;
         dvp_config.reset_pin = cam_pin_cfg.reset;
         dvp_config.pwdn_pin = cam_pin_cfg.pwr;
         dvp_config.dvp_pin.data_width = CAM_CTLR_DATA_WIDTH_8;
@@ -92,16 +101,13 @@ static esp_capture_video_src_if_t *create_video_source(void)
         dvp_config.dvp_pin.de_io = cam_pin_cfg.de;
         dvp_config.xclk_freq = 20000000;
         cam_config.dvp = &dvp_config;
+        strncpy(v4l2_cfg.dev_name, "/dev/video2", sizeof(v4l2_cfg.dev_name));
     }
     ret = esp_video_init(&cam_config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Camera init failed with error 0x%x", ret);
         return NULL;
     }
-    esp_capture_video_v4l2_src_cfg_t v4l2_cfg = {
-        .dev_name = "/dev/video0",
-        .buf_count = 2,
-    };
     return esp_capture_new_video_v4l2_src(&v4l2_cfg);
 #endif
 
@@ -140,7 +146,15 @@ static int build_capture_system(void)
     };
     capture_sys.aud_src = esp_capture_new_audio_dev_src(&codec_cfg);
     RET_ON_NULL(capture_sys.aud_src, -1);
-
+#if CONFIG_IDF_TARGET_ESP32S31
+    esp_capture_audio_info_t aud_info = {
+        .format_id = ESP_CAPTURE_FMT_ID_PCM,
+        .sample_rate = 8000,
+        .channel = 1,
+        .bits_per_sample = 16,
+    };
+    capture_sys.aud_src->set_fixed_caps(capture_sys.aud_src, &aud_info);
+#endif
     // Create capture system
     esp_capture_cfg_t cfg = {
         .sync_mode = ESP_CAPTURE_SYNC_MODE_AUDIO,
@@ -185,6 +199,20 @@ static int build_player_system()
         ESP_LOGE(TAG, "Fail to create player");
         return -1;
     }
+#if CONFIG_IDF_TARGET_ESP32S31
+    esp_codec_dev_sample_info_t fs = {
+        .sample_rate = 8000,
+        .channel = 2,
+        .bits_per_sample = 16,
+    };
+    av_render_audio_frame_info_t fixed_info = {
+        .sample_rate = 8000,
+        .channel = 2,
+        .bits_per_sample = 16,
+    };
+    av_render_set_fixed_frame_info(player_sys.player, &fixed_info);
+    esp_codec_dev_open(get_playback_handle(), &fs);
+#endif
     return 0;
 }
 
@@ -218,7 +246,7 @@ int test_capture_to_player(void)
             .channel = 1,
             .bits_per_sample = 16,
         },
-        .video_info = { .format_id = ESP_CAPTURE_FMT_ID_MJPEG, .width = VIDEO_WIDTH, .height = VIDEO_HEIGHT, .fps = 20 },
+        .video_info = { .format_id = ESP_CAPTURE_FMT_ID_H264, .width = VIDEO_WIDTH, .height = VIDEO_HEIGHT, .fps = VIDEO_FPS },
     };
     // Create capture
     esp_capture_sink_handle_t capture_path = NULL;
@@ -233,13 +261,14 @@ int test_capture_to_player(void)
     av_render_add_audio_stream(player_sys.player, &render_aud_info);
 
     av_render_video_info_t render_vid_info = {
-        .codec = AV_RENDER_VIDEO_CODEC_MJPEG,
+        .codec = AV_RENDER_VIDEO_CODEC_H264,
     };
     av_render_add_video_stream(player_sys.player, &render_vid_info);
     uint32_t start_time = (uint32_t)(esp_timer_get_time() / 1000);
     esp_capture_start(capture_sys.capture_handle);
+    uint32_t video_frame_num = 0;
     while ((uint32_t)(esp_timer_get_time() / 1000) < start_time + 2000) {
-        media_lib_thread_sleep(30);
+        media_lib_thread_sleep(10);
         esp_capture_stream_frame_t frame = {
             .stream_type = ESP_CAPTURE_STREAM_TYPE_AUDIO,
         };
@@ -259,12 +288,16 @@ int test_capture_to_player(void)
                 .size = frame.size,
                 .pts = frame.pts,
             };
-            av_render_add_video_data(player_sys.player, &video_data);
+            //av_render_add_video_data(player_sys.player, &video_data);
             esp_capture_sink_release_frame(capture_path, &frame);
+            video_frame_num++;
         }
     }
+    uint32_t end_time = (uint32_t) (esp_timer_get_time() / 1000);
     esp_capture_stop(capture_sys.capture_handle);
     av_render_reset(player_sys.player);
+    uint32_t fps = video_frame_num * 1000 / (end_time - start_time);
+    ESP_LOGI(TAG, "Capture video fps:%d", (int)fps);
     return 0;
 }
 

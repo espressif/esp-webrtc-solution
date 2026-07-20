@@ -230,7 +230,7 @@ static void thread_scheduler(const char *thread_name, media_lib_thread_cfg_t *sc
     if (strcmp(thread_name, "venc_0") == 0) {
         // For H264 may need huge stack if use hardware encoder can set it to small value
         schedule_cfg->priority = 10;
-#if CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32S31
         schedule_cfg->stack_size = 20 * 1024;
 #endif
     }

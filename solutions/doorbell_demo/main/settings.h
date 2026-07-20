@@ -22,6 +22,10 @@ extern "C" {
 #define VIDEO_WIDTH  1920
 #define VIDEO_HEIGHT 1080
 #define VIDEO_FPS    25
+#elif CONFIG_IDF_TARGET_ESP32S31
+#define VIDEO_WIDTH  640
+#define VIDEO_HEIGHT 480
+#define VIDEO_FPS    5
 #else
 #define VIDEO_WIDTH  320
 #define VIDEO_HEIGHT 240
@@ -52,6 +56,15 @@ extern "C" {
  *        User must replace it to a unused GPIO instead (like GPIO27)
  */
 #define DOOR_BELL_RING_BUTTON  35
+
+#elif CONFIG_IDF_TARGET_ESP32S31
+/**
+ * @brief  GPIO for ring button
+ *
+ * @note  When use ESP32S31-KORVO-1 boot button
+ */
+#define DOOR_BELL_RING_BUTTON  61
+
 #else
 /**
  * @brief  GPIO for ring button
@@ -62,7 +75,7 @@ extern "C" {
 
 #endif
 
-#define WEBRTC_SUPPORT_OPUS
+//#define WEBRTC_SUPPORT_OPUS
 
 #ifdef __cplusplus
 }
