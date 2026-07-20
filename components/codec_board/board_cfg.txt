@@ -132,7 +132,6 @@ lcd: {
     cs: 18, dc: 19, clk: 17, mosi: 16, cmd_bits: 8, param_bits: 8
 }
 
-
 Board: ESP32_S31_KORVO_1
 i2c: {sda: 0, scl: 1}
 i2s: {mclk: -1, bclk: 3, ws: 4, dout: 5, din: 6}

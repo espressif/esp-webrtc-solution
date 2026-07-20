@@ -44,6 +44,9 @@ config ESP32_S3_ECHOEAR_BOARD
 config ATOMS3_ECHO_BASE_BOARD
     depends on IDF_TARGET_ESP32S3
     bool "ATOMS3 ECHO BASE"
+config ESP32_S31_S31_KORVO_1_BOARD
+    depends on IDF_TARGET_ESP32S31
+    bool "ESP32 S31 KORVO 1"
 endchoice
 
 config CODEC_BOARD
@@ -61,5 +64,6 @@ config CODEC_BOARD
     default "ESP32_S3_EchoEar" if ESP32_S3_ECHOEAR_BOARD
     default "ATOMS3_ECHO_BASE" if ATOMS3_ECHO_BASE_BOARD
     default "ESP32_P4_EYE" if ESP32_P4_EYE_BOARD
+    default "ESP32_S31_KORVO_1" if ESP32_S31_S31_KORVO_1_BOARD
     default "DUMMY_CODEC_BOARD"
 endmenu
