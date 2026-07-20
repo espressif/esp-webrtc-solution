@@ -12,6 +12,8 @@ dependencies:
     version: "^0.3.0"
     rules:
       - if: target in [esp32p4, esp32s3]
+    matches:
+      - if: "$CONFIG{DOORBELL_SUPPORT_PEDESTRIAN_DETECT} == True"
   tempotian/codec_board:
       override_path: ../../../components/codec_board
   tempotian/esp_webrtc:

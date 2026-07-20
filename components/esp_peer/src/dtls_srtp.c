@@ -5,6 +5,7 @@
  * See LICENSE file for details.
  */
 
+// #define DUMP_DTLS_KEY
 #include "dtls_common.h"
 #include "mbedtls/ecp.h"
 
@@ -270,6 +271,8 @@ void dtls_srtp_reset_session(dtls_srtp_t *dtls_srtp, dtls_srtp_role_t role)
         mbedtls_ssl_conf_dtls_srtp_protection_profiles(&dtls_srtp->conf, default_profiles);
         mbedtls_ssl_conf_srtp_mki_value_supported(&dtls_srtp->conf, MBEDTLS_SSL_DTLS_SRTP_MKI_UNSUPPORTED);
         mbedtls_ssl_conf_dtls_anti_replay(&dtls_srtp->conf, MBEDTLS_SSL_ANTI_REPLAY_DISABLED);
+        mbedtls_ssl_free(&dtls_srtp->ssl);
+        mbedtls_ssl_init(&dtls_srtp->ssl);
         mbedtls_ssl_setup(&dtls_srtp->ssl, &dtls_srtp->conf);
         mbedtls_ssl_set_mtu(&dtls_srtp->ssl, DTLS_MTU_SIZE);
         dtls_srtp->role = role;

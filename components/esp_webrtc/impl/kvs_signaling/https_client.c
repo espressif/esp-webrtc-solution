@@ -16,7 +16,12 @@
 
 #include "webrtc_utils_time.h"
 #include "sigv4.h"
+#include "esp_idf_version.h"
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+#include <mbedtls/private/sha256.h>
+#else
 #include <mbedtls/sha256.h>
+#endif
 
 static const char *TAG = "HTTPS_CLIENT";
 
@@ -127,6 +132,8 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
             break;
         case HTTP_EVENT_REDIRECT:
             esp_http_client_set_redirection(evt->client);
+            break;
+        default:
             break;
     }
     return ESP_OK;

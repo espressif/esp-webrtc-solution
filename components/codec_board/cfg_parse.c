@@ -280,6 +280,15 @@ static int fill_lcd_cfg(board_cfg_attr_t *attr)
                 for (int i = 0; i < sizeof(lcd_cfg->spi_cfg.d)/sizeof(lcd_cfg->spi_cfg.d[0]); i++) {
                     lcd_cfg->spi_cfg.d[i] = -1;
                 }
+            } else if (lcd_cfg->bus_type == LCD_BUS_TYPE_RGB) {
+                for (int i = 0; i < sizeof(lcd_cfg->rgb_cfg.data)/sizeof(lcd_cfg->rgb_cfg.data[0]); i++) {
+                    lcd_cfg->rgb_cfg.data[i] = -1;
+                }
+                lcd_cfg->rgb_cfg.hsync = lcd_cfg->rgb_cfg.vsync = -1;
+                lcd_cfg->rgb_cfg.de = lcd_cfg->rgb_cfg.pclk = lcd_cfg->rgb_cfg.disp = -1;
+                lcd_cfg->rgb_cfg.data_width = 16;
+                lcd_cfg->rgb_cfg.fb_num = 1;
+                lcd_cfg->rgb_cfg.fb_in_psram = 1;
             }
         } else if (str_same(attr->attr, "controller")) {
             lcd_cfg->controller = lcd_get_controller(attr->value);
@@ -319,6 +328,8 @@ static int fill_lcd_cfg(board_cfg_attr_t *attr)
                 lcd_cfg->spi_cfg.cmd_bits = (uint8_t)atoi(attr->value);
             } else if (str_same(attr->attr, "param_bits")) {
                 lcd_cfg->spi_cfg.param_bits = (uint8_t)atoi(attr->value);
+            } else if (str_same(attr->attr, "trans_sz")) {
+                lcd_cfg->spi_cfg.trans_sz = (uint32_t)atoi(attr->value);
             }
         } else if (lcd_cfg->bus_type == LCD_BUS_TYPE_MIPI) {
             if (str_same(attr->attr, "ldo_chan")) {
@@ -360,6 +371,45 @@ static int fill_lcd_cfg(board_cfg_attr_t *attr)
             else if (str_same(attr->attr, "dsi_vfp")) {
                 lcd_cfg->mipi_cfg.dsi_vfp = (uint8_t)atoi(attr->value);
             }
+        } else if (lcd_cfg->bus_type == LCD_BUS_TYPE_RGB) {
+            if (str_same(attr->attr, "hsync")) {
+                lcd_cfg->rgb_cfg.hsync = get_pin(attr->value);
+            } else if (str_same(attr->attr, "vsync")) {
+                lcd_cfg->rgb_cfg.vsync = get_pin(attr->value);
+            } else if (str_same(attr->attr, "de")) {
+                lcd_cfg->rgb_cfg.de = get_pin(attr->value);
+            } else if (str_same(attr->attr, "pclk")) {
+                lcd_cfg->rgb_cfg.pclk = get_pin(attr->value);
+            } else if (str_same(attr->attr, "disp")) {
+                lcd_cfg->rgb_cfg.disp = get_pin(attr->value);
+            } else if (str_same(attr->attr, "pclk_hz")) {
+                lcd_cfg->rgb_cfg.pclk_hz = (uint32_t)atoi(attr->value);
+            } else if (str_same(attr->attr, "data_width")) {
+                lcd_cfg->rgb_cfg.data_width = (uint8_t)atoi(attr->value);
+            } else if (str_same(attr->attr, "fb_num")) {
+                lcd_cfg->rgb_cfg.fb_num = (uint8_t)atoi(attr->value);
+            } else if (str_same(attr->attr, "hsync_pulse_width")) {
+                lcd_cfg->rgb_cfg.hsync_pulse_width = (uint16_t)atoi(attr->value);
+            } else if (str_same(attr->attr, "hsync_back_porch")) {
+                lcd_cfg->rgb_cfg.hsync_back_porch = (uint16_t)atoi(attr->value);
+            } else if (str_same(attr->attr, "hsync_front_porch")) {
+                lcd_cfg->rgb_cfg.hsync_front_porch = (uint16_t)atoi(attr->value);
+            } else if (str_same(attr->attr, "vsync_pulse_width")) {
+                lcd_cfg->rgb_cfg.vsync_pulse_width = (uint16_t)atoi(attr->value);
+            } else if (str_same(attr->attr, "vsync_back_porch")) {
+                lcd_cfg->rgb_cfg.vsync_back_porch = (uint16_t)atoi(attr->value);
+            } else if (str_same(attr->attr, "vsync_front_porch")) {
+                lcd_cfg->rgb_cfg.vsync_front_porch = (uint16_t)atoi(attr->value);
+            } else if (str_same(attr->attr, "pclk_active_neg")) {
+                lcd_cfg->rgb_cfg.pclk_active_neg = atoi(attr->value) ? 1 : 0;
+            } else if (str_same(attr->attr, "fb_in_psram")) {
+                lcd_cfg->rgb_cfg.fb_in_psram = atoi(attr->value) ? 1 : 0;
+            } else if (attr->attr[0] == 'd' && attr->attr[1] >= '0' && attr->attr[1] <= '9') {
+                int n = atoi(attr->attr + 1);
+                if (n < (int)(sizeof(lcd_cfg->rgb_cfg.data) / sizeof(lcd_cfg->rgb_cfg.data[0]))) {
+                    lcd_cfg->rgb_cfg.data[n] = get_pin(attr->value);
+                }
+            }
         }
         attr = attr->next;
     }
@@ -380,6 +430,9 @@ static codec_type_t get_codec_type(const char *type)
     }
     if (str_same(type, "ES7210")) {
         return CODEC_TYPE_ES7210;
+    }
+    if (str_same(type, "ES8389")) {
+        return CODEC_TYPE_ES8389;
     }
     if (str_same(type, "DUMMY")) {
         return CODEC_TYPE_DUMMY;
@@ -416,8 +469,8 @@ static int fill_codec_cfg(board_cfg_attr_t *attr, uint8_t codec_dir)
             if (codec_cfg->codec_type == CODEC_TYPE_NONE) {
                 return -1;
             }
-        } else if (str_same(attr->attr, "i2c_addr")) {
-            codec_cfg->i2c_addr = (uint8_t) atoi(attr->value);
+        } else if (str_same(attr->attr, "i2c_addr") || str_same(attr->attr, "address")) {
+            codec_cfg->i2c_addr = (uint8_t) strtol(attr->value, NULL, 0);
         }
         attr = attr->next;
     }
@@ -487,15 +540,15 @@ static int fill_camera_cfg(board_cfg_attr_t *attr)
             camera_cfg->xclk = (int16_t) atoi(attr->value);
         } else if (str_same(attr->attr, "pclk")) {
             camera_cfg->pclk = (int16_t) atoi(attr->value);
-        } else if (str_same(attr->attr, "pwr")) {
+        } else if (str_same(attr->attr, "pwr") || str_same(attr->attr, "ctrl")) {
             camera_cfg->pwr = (int16_t) atoi(attr->value);
-        } else if (str_same(attr->attr, "reset")) {
+        } else if (str_same(attr->attr, "reset") || str_same(attr->attr, "rst")) {
             camera_cfg->reset = (int16_t) atoi(attr->value);
         } else if (str_same(attr->attr, "vsync")) {
             camera_cfg->vsync = (int16_t) atoi(attr->value);
         } else if (str_same(attr->attr, "href")) {
             camera_cfg->href = (int16_t) atoi(attr->value);
-        }  else if (str_same(attr->attr, "de")) {
+        } else if (str_same(attr->attr, "de") || str_same(attr->attr, "de_io")) {
             camera_cfg->de = (int16_t) atoi(attr->value);
         } else if (attr->attr[0] == 'd' && attr->attr[1] >= '0' && attr->attr[1] <= '9') {
             int n = atoi(attr->attr + 1);

@@ -6,3 +6,5 @@ dependencies:
     override_path: ../../../esp_peer
     version: "*"
     public: true
+  espressif/cjson:
+    version: "~1.7"

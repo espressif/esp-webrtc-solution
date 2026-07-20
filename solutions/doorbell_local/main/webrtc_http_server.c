@@ -14,6 +14,7 @@
 #include "esp_http_server.h"
 #include "esp_https_server.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "cJSON.h"
 #include "esp_peer_signaling.h"
 #include "webrtc_http_server.h"
@@ -259,6 +260,7 @@ static esp_err_t webrtc_ring_get_handler(httpd_req_t *req)
     const size_t ring_aac_size = (ring_aac_end - ring_aac_start);
 
     httpd_resp_set_type(req, "audio/aac");
+    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=31536000");
     httpd_resp_send(req, (const char *)ring_aac_start, ring_aac_size);
     return ESP_OK;
 }
@@ -269,10 +271,17 @@ static esp_err_t init_http_server(void)
     httpd_ssl_config_t conf = HTTPD_SSL_CONFIG_DEFAULT();
     conf.httpd.max_uri_handlers = 16;
     conf.httpd.stack_size = 8192;
+    // Default HTTPS max_open_sockets is 4; raise it so page + SSE + audio + probes can coexist
+    conf.httpd.max_open_sockets = 7;
     conf.httpd.lru_purge_enable = true;
     conf.httpd.recv_wait_timeout = 5;
     conf.httpd.send_wait_timeout = 5;
     conf.httpd.max_resp_headers = 8;
+
+    // Browser speculative TLS probes abort often; silence those expected errors
+    esp_log_level_set("esp-tls-mbedtls", ESP_LOG_NONE);
+    esp_log_level_set("esp_https_server", ESP_LOG_NONE);
+    esp_log_level_set("httpd", ESP_LOG_NONE);
 
     extern const unsigned char servercert_start[] asm("_binary_servercert_pem_start");
     extern const unsigned char servercert_end[] asm("_binary_servercert_pem_end");

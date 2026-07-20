@@ -24,10 +24,8 @@
 #include <sdkconfig.h>
 #include "color_convert.h"
 #include "esp_log.h"
-
-#if CONFIG_IDF_TARGET_ESP32P4
-extern void i420_to_rgb565le(uint8_t *in_image, uint8_t *out_image, int16_t width, int16_t height);
-#endif
+#include "esp_idf_version.h"
+#include "esp_imgfx_color_convert.h"
 
 #define TAG "CLR_CONVERT"
 
@@ -45,6 +43,9 @@ typedef struct {
     av_render_video_frame_type_t to;
     int                          width;
     int                          height;
+#if CONFIG_IDF_TARGET_ESP32P4
+    esp_imgfx_color_convert_handle_t convert_hd;
+#endif
 } color_convert_t;
 
 static int get_table_size(av_render_video_frame_type_t from, av_render_video_frame_type_t to)
@@ -131,6 +132,19 @@ color_convert_table_t init_convert_table(color_convert_cfg_t *cfg)
         convert->height = cfg->height;
 #if CONFIG_IDF_TARGET_ESP32P4
         if (convert->from == AV_RENDER_VIDEO_RAW_TYPE_YUV420 && convert->to == AV_RENDER_VIDEO_RAW_TYPE_RGB565) {
+            esp_imgfx_color_convert_cfg_t convert_cfg = {
+                .in_res = {
+                    .width = cfg->width,
+                    .height = cfg->height,
+                },
+                .in_pixel_fmt = ESP_IMGFX_PIXEL_FMT_I420,
+                .out_pixel_fmt = ESP_IMGFX_PIXEL_FMT_RGB565_LE,
+                .color_space_std = ESP_IMGFX_COLOR_SPACE_STD_BT709,
+            };
+            esp_imgfx_color_convert_open(&convert_cfg, &convert->convert_hd);
+            if (convert->convert_hd == NULL) {
+                break;
+            }
             return (color_convert_table_t)convert;
         }
 #endif
@@ -184,11 +198,28 @@ int convert_color(color_convert_table_t table, uint8_t *src, int src_size, uint8
     color_convert_t *convert = (color_convert_t *)table;
     if (convert->from == AV_RENDER_VIDEO_RAW_TYPE_YUV420 && convert->to == AV_RENDER_VIDEO_RAW_TYPE_RGB565) {
 #if CONFIG_IDF_TARGET_ESP32P4
-        i420_to_rgb565le(src, dst, convert->width, convert->height);
+        esp_imgfx_data_t from_image = {
+            .data = src,
+            .data_len = src_size,
+        };
+        esp_imgfx_data_t to_image = {
+            .data = dst,
+            .data_len = dst_size,
+        };
+        esp_imgfx_color_convert_process(convert->convert_hd, &from_image, &to_image);
+        return 0;
+#else
+        int src_need = convert->width * convert->height * 3 / 2;
+        int dst_need = convert->width * convert->height * 2;
+        if (src_size != src_need || dst_size < dst_need) {
+            ESP_LOGE(TAG, "size dismatch");
+            return -1;
+        }
+        yuv420_to_rgb565(convert, src, dst);
         return 0;
 #endif
     }
-    
+
     switch (convert->from) {
         case AV_RENDER_VIDEO_RAW_TYPE_YUV420: {
             int src_need = convert->width * convert->height * 3 / 2;
@@ -219,6 +250,12 @@ void deinit_convert_table(color_convert_table_t t)
 {
     color_convert_t *convert = (color_convert_t *)t;
     if (convert) {
+#if CONFIG_IDF_TARGET_ESP32P4
+        if (convert->convert_hd) {
+            esp_imgfx_color_convert_close(convert->convert_hd);
+            convert->convert_hd = NULL;
+        }
+#endif
         if (convert->table) {
             free(convert->table);
             convert->table = NULL;

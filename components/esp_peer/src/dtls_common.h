@@ -86,8 +86,8 @@ static int check_srtp(bool init)
             }
             ESP_LOGI(TAG, "Init SRTP OK");
             init_count++;
-            init_count++;
         }
+        init_count++;
     } else {
         if (init_count) {
             init_count--;

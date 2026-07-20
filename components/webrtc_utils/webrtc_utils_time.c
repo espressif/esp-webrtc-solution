@@ -24,6 +24,7 @@
 
 #include <sys/time.h>
 #include <esp_log.h>
+#include <time.h>
 #include "esp_netif.h"
 #include "esp_netif_sntp.h"
 
@@ -62,8 +63,13 @@ esp_err_t webrtc_utils_time_sync_init()
         return ESP_OK;
     }
     ESP_LOGI(TAG, "Initializing SNTP");
-    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(2,
-                               ESP_SNTP_SERVER_LIST("time.windows.com", "pool.ntp.org" ) );
+#if CONFIG_LWIP_SNTP_MAX_SERVERS > 1
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(
+        CONFIG_LWIP_SNTP_MAX_SERVERS,
+        ESP_SNTP_SERVER_LIST("time.windows.com", "pool.ntp.org"));
+#else
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+#endif
     esp_netif_sntp_init(&config);
     init_done = true;
     return ESP_OK;

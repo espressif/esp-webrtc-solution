@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.5.1
+
+### Bug Fixes
+
+- Fixed leakage caused by DTLS re-setup
+- Fixed data channel still create even peer sdp not contain data channel
+- Fixed aggressive SCTP resend logic, use exponential resend time as browser
+
 ## v1.5.0
 
 ### Features

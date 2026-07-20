@@ -10,5 +10,5 @@ idf_component_register(
     SRCS ${srcs} ${SIGV4_SOURCES}
     INCLUDE_DIRS "./" ${SIGV4_INCLUDE_PUBLIC_DIRS}
 
-    REQUIRES json esp_http_client esp_websocket_client webrtc_utils
+    REQUIRES esp_http_client esp_websocket_client webrtc_utils
 )

@@ -6,6 +6,7 @@
 #include "driver/gpio.h"
 #include "driver/spi_common.h"
 #include "esp_idf_version.h"
+#include <inttypes.h>
 
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 3, 0)
 #include "esp_lcd_panel_dev.h"
@@ -21,6 +22,11 @@
 #include "esp_ldo_regulator.h"
 #include "soc/mipi_dsi_bridge_struct.h"
 #include "esp_lcd_ek79007.h"
+#endif
+
+#if SOC_LCD_RGB_SUPPORTED
+#include "esp_lcd_panel_rgb.h"
+#include "soc/soc_caps.h"
 #endif
 
 #include "freertos/FreeRTOS.h"
@@ -150,21 +156,18 @@ static int _init_spi_lcd(lcd_cfg_t *cfg)
         .quadhd_io_num = -1,
         .max_transfer_sz = cfg->width * cfg->height * 2,
     };
+    if (cfg->spi_cfg.trans_sz > 0) {
+        buscfg.max_transfer_sz = cfg->spi_cfg.trans_sz;
+    }
 #if SOC_SPI_SUPPORT_OCT
     if (cfg->spi_cfg.d[6] >= 0) {
         buscfg.data1_io_num = cfg->spi_cfg.d[0];
         buscfg.data2_io_num = cfg->spi_cfg.d[1];
-        ;
         buscfg.data3_io_num = cfg->spi_cfg.d[2];
-        ;
         buscfg.data4_io_num = cfg->spi_cfg.d[3];
-        ;
         buscfg.data5_io_num = cfg->spi_cfg.d[4];
-        ;
         buscfg.data6_io_num = cfg->spi_cfg.d[5];
-        ;
         buscfg.data7_io_num = cfg->spi_cfg.d[6];
-        ;
         buscfg.flags = SPICOMMON_BUSFLAG_OCTAL;
     }
 #endif
@@ -242,7 +245,9 @@ static int _init_mipi_lcd(lcd_cfg_t *cfg)
     esp_lcd_dsi_bus_config_t bus_config = {
         .bus_id = 0,
         .num_data_lanes = mipi_cfg->lane_num,
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 5, 4)
         .phy_clk_src = MIPI_DSI_PHY_CLK_SRC_DEFAULT,
+#endif
         .lane_bit_rate_mbps = mipi_cfg->lane_bitrate,
     };
     ret = esp_lcd_new_dsi_bus(&bus_config, &mipi_dsi_bus);
@@ -258,6 +263,27 @@ static int _init_mipi_lcd(lcd_cfg_t *cfg)
     ret = esp_lcd_new_panel_io_dbi(mipi_dsi_bus, &dbi_config, &mipi_dbi_io);
     RETURN_ON_ERR(ret);
     g_io_handle = mipi_dbi_io;
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+    lcd_color_format_t color_fmt = mipi_cfg->bit_depth == 24 ? LCD_COLOR_FMT_RGB888 : LCD_COLOR_FMT_RGB565;
+    esp_lcd_dpi_panel_config_t dpi_config = {
+        .num_fbs = mipi_cfg->fb_num,
+        .virtual_channel = 0,
+        .dpi_clk_src = MIPI_DSI_DPI_CLK_SRC_DEFAULT,
+        .dpi_clock_freq_mhz = mipi_cfg->dpi_clk,
+        .in_color_format = color_fmt,
+        .out_color_format = color_fmt,
+        .video_timing = {
+            .h_size = cfg->width,
+            .v_size = cfg->height,
+            .hsync_back_porch = mipi_cfg->dsi_hbp,
+            .hsync_pulse_width = mipi_cfg->dsi_hsync,
+            .hsync_front_porch = mipi_cfg->dsi_hfp,
+            .vsync_back_porch = mipi_cfg->dsi_vbp,
+            .vsync_pulse_width = mipi_cfg->dsi_vsync,
+            .vsync_front_porch = mipi_cfg->dsi_vfp,
+        },
+    };
+#else
     esp_lcd_dpi_panel_config_t dpi_config = {
         .num_fbs = mipi_cfg->fb_num,
         .virtual_channel = 0,
@@ -276,6 +302,7 @@ static int _init_mipi_lcd(lcd_cfg_t *cfg)
         },
         .flags.use_dma2d = true,
     };
+#endif
     esp_lcd_panel_dev_config_t panel_config = {
         .bits_per_pixel = mipi_cfg->bit_depth,
         .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
@@ -283,7 +310,11 @@ static int _init_mipi_lcd(lcd_cfg_t *cfg)
     };
     if (cfg->width == 1024 && cfg->height == 600) {
         ESP_LOGI(TAG, "Install EK79007 LCD control panel");
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+        esp_lcd_dpi_panel_config_t dpi_config = EK79007_1024_600_PANEL_60HZ_CONFIG_CF(LCD_COLOR_FMT_RGB565);
+#else
         esp_lcd_dpi_panel_config_t dpi_config = EK79007_1024_600_PANEL_60HZ_CONFIG(LCD_COLOR_PIXEL_FORMAT_RGB565);
+#endif
         dpi_config.num_fbs = mipi_cfg->fb_num;
         ek79007_vendor_config_t vendor_config = {
             .mipi_config = {
@@ -319,6 +350,76 @@ static int _init_mipi_lcd(lcd_cfg_t *cfg)
 
 #endif
 
+#if SOC_LCD_RGB_SUPPORTED
+static int _init_rgb_lcd(lcd_cfg_t *cfg)
+{
+    lcd_rgb_cfg_t *rgb_cfg = &cfg->rgb_cfg;
+    if (cfg->width <= 0 || cfg->height <= 0 || rgb_cfg->pclk_hz == 0) {
+        ESP_LOGE(TAG, "Invalid RGB LCD timing or resolution");
+        return -1;
+    }
+
+    esp_lcd_rgb_panel_config_t panel_config = {
+        .clk_src = LCD_CLK_SRC_DEFAULT,
+        .timings = {
+            .pclk_hz = rgb_cfg->pclk_hz,
+            .h_res = cfg->width,
+            .v_res = cfg->height,
+            .hsync_pulse_width = rgb_cfg->hsync_pulse_width,
+            .hsync_back_porch = rgb_cfg->hsync_back_porch,
+            .hsync_front_porch = rgb_cfg->hsync_front_porch,
+            .vsync_pulse_width = rgb_cfg->vsync_pulse_width,
+            .vsync_back_porch = rgb_cfg->vsync_back_porch,
+            .vsync_front_porch = rgb_cfg->vsync_front_porch,
+            .flags = {
+                .pclk_active_neg = rgb_cfg->pclk_active_neg,
+            },
+        },
+        .data_width = rgb_cfg->data_width ? rgb_cfg->data_width : 16,
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
+        .in_color_format = LCD_COLOR_FMT_RGB565,
+        .out_color_format = LCD_COLOR_FMT_RGB565,
+#else
+        .bits_per_pixel = 16,
+#endif
+        .num_fbs = rgb_cfg->fb_num ? rgb_cfg->fb_num : 1,
+        .bounce_buffer_size_px = 0,
+        .dma_burst_size = 64,
+        .hsync_gpio_num = rgb_cfg->hsync,
+        .vsync_gpio_num = rgb_cfg->vsync,
+        .de_gpio_num = rgb_cfg->de,
+        .pclk_gpio_num = rgb_cfg->pclk,
+        .disp_gpio_num = rgb_cfg->disp,
+        .flags = {
+            .fb_in_psram = rgb_cfg->fb_in_psram,
+        },
+    };
+    size_t data_pin_num = sizeof(rgb_cfg->data) / sizeof(rgb_cfg->data[0]);
+    size_t panel_pin_num = sizeof(panel_config.data_gpio_nums) / sizeof(panel_config.data_gpio_nums[0]);
+    for (size_t i = 0; i < data_pin_num && i < panel_pin_num; i++) {
+        panel_config.data_gpio_nums[i] = rgb_cfg->data[i];
+    }
+
+    ESP_LOGI(TAG, "Init RGB LCD %dx%d pclk=%" PRIu32 " HSYNC:%d VSYNC:%d DE:%d PCLK:%d",
+             cfg->width, cfg->height, rgb_cfg->pclk_hz,
+             rgb_cfg->hsync, rgb_cfg->vsync, rgb_cfg->de, rgb_cfg->pclk);
+    int ret = esp_lcd_new_rgb_panel(&panel_config, &panel_handle);
+    RETURN_ON_ERR(ret);
+    ret = esp_lcd_panel_reset(panel_handle);
+    RETURN_ON_ERR(ret);
+    return ret;
+}
+#else
+
+static int _init_rgb_lcd(lcd_cfg_t *cfg)
+{
+    (void)cfg;
+    ESP_LOGE(TAG, "RGB LCD not supported on this target");
+    return -1;
+}
+
+#endif
+
 static int _init_lcd(lcd_cfg_t *cfg)
 {
     int ret = 0;
@@ -348,6 +449,8 @@ static int _init_lcd(lcd_cfg_t *cfg)
         ret = _init_spi_lcd(cfg);
     } else if (cfg->bus_type == LCD_BUS_TYPE_MIPI) {
         ret = _init_mipi_lcd(cfg);
+    } else if (cfg->bus_type == LCD_BUS_TYPE_RGB) {
+        ret = _init_rgb_lcd(cfg);
     }
     if (panel_handle) {
         ret = esp_lcd_panel_init(panel_handle);
