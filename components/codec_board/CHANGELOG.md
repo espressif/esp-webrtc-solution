@@ -3,6 +3,7 @@
 ## v2.0.2
 
 - Fixed LCD init failed due to clk error on IDFv6.x
+- Added support for `esp32s31_korvo_1` board
 
 ## v2.0.1
 
