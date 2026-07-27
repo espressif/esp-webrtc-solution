@@ -219,6 +219,9 @@ void dtls_srtp_deinit(dtls_srtp_t *dtls_srtp)
     if (dtls_srtp->role == DTLS_SRTP_ROLE_SERVER) {
         mbedtls_ssl_cookie_free(&dtls_srtp->cookie_ctx);
     }
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+    dtls_srtp_ch_reasm_free(dtls_srtp);
+#endif
     if (dtls_srtp->srtp_in) {
         srtp_dealloc(dtls_srtp->srtp_in);
         dtls_srtp->srtp_in = NULL;

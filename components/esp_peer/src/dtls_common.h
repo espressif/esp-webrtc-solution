@@ -172,16 +172,306 @@ static void dtls_srtp_key_derivation(void *context, mbedtls_ssl_key_export_type 
     dtls_srtp->state = DTLS_SRTP_STATE_CONNECTED;
 }
 
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+/*
+ * mbedTLS < 3.6.6: initial ClientHello path bypasses read_record() and rejects
+ * fragments (-0x7080). mbedTLS >= 3.6.6 calls read_record() and reassembles in
+ * the existing ssl->in_buf (no extra dedicated buffers).
+ *
+ * Here we mirror that idea lightly: one datagram on stack (MTU), and one
+ * message-sized heap buffer only while a fragmented ClientHello is active.
+ */
+#define DTLS_RECORD_HDR_LEN 13
+#define DTLS_HS_HDR_LEN     12
+#define DTLS_CH_MAX_MSG     4096
+
+static void dtls_srtp_ch_reasm_reset(dtls_srtp_t *d)
+{
+    d->ch_total = 0;
+    d->ch_got = 0;
+    d->ch_msg_seq = 0;
+    d->ch_active = 0;
+}
+
+static void dtls_srtp_ch_pending_clear(dtls_srtp_t *d)
+{
+    d->ch_len = 0;
+    d->ch_pos = 0;
+}
+
+static void dtls_srtp_ch_reasm_free(dtls_srtp_t *d)
+{
+    if (d->ch_buf) {
+        media_lib_free(d->ch_buf);
+        d->ch_buf = NULL;
+    }
+    d->ch_cap = 0;
+    dtls_srtp_ch_pending_clear(d);
+    dtls_srtp_ch_reasm_reset(d);
+}
+
+static uint8_t *dtls_srtp_ch_mask(dtls_srtp_t *d)
+{
+    return d->ch_buf + DTLS_RECORD_HDR_LEN + DTLS_HS_HDR_LEN + d->ch_total;
+}
+
+static int dtls_srtp_ch_ensure_msg_buf(dtls_srtp_t *d, size_t total)
+{
+    size_t need = DTLS_RECORD_HDR_LEN + DTLS_HS_HDR_LEN + total + ((total + 7) / 8);
+
+    if (total == 0 || total > DTLS_CH_MAX_MSG) {
+        return -1;
+    }
+    if (d->ch_buf && d->ch_cap >= need) {
+        return 0;
+    }
+    uint8_t *p = (uint8_t *)media_lib_malloc(need);
+    if (p == NULL) {
+        return -1;
+    }
+    if (d->ch_buf) {
+        media_lib_free(d->ch_buf);
+    }
+    d->ch_buf = p;
+    d->ch_cap = need;
+    dtls_srtp_ch_pending_clear(d);
+    return 0;
+}
+
+static int dtls_srtp_ch_queue_datagram(dtls_srtp_t *d, const uint8_t *data, size_t len)
+{
+    if (len == 0 || len > DTLS_CH_MAX_MSG) {
+        return -1;
+    }
+    if (d->ch_buf == NULL || d->ch_cap < len) {
+        uint8_t *p = (uint8_t *)media_lib_malloc(len);
+        if (p == NULL) {
+            return -1;
+        }
+        if (d->ch_buf) {
+            media_lib_free(d->ch_buf);
+        }
+        d->ch_buf = p;
+        d->ch_cap = len;
+    }
+    memcpy(d->ch_buf, data, len);
+    d->ch_len = len;
+    d->ch_pos = 0;
+    return 0;
+}
+
+static int dtls_srtp_ch_finish(dtls_srtp_t *d)
+{
+    size_t hs_len = DTLS_HS_HDR_LEN + d->ch_total;
+    size_t rec_len = DTLS_RECORD_HDR_LEN + hs_len;
+    uint8_t *out = d->ch_buf;
+
+    memcpy(out, d->ch_rec_hdr, DTLS_RECORD_HDR_LEN);
+    out[11] = (uint8_t)((hs_len >> 8) & 0xff);
+    out[12] = (uint8_t)(hs_len & 0xff);
+    out[13] = 0x01; /* ClientHello */
+    out[14] = (uint8_t)((d->ch_total >> 16) & 0xff);
+    out[15] = (uint8_t)((d->ch_total >> 8) & 0xff);
+    out[16] = (uint8_t)(d->ch_total & 0xff);
+    out[17] = (uint8_t)((d->ch_msg_seq >> 8) & 0xff);
+    out[18] = (uint8_t)(d->ch_msg_seq & 0xff);
+    out[19] = out[20] = out[21] = 0; /* fragment_offset */
+    out[22] = out[14];
+    out[23] = out[15];
+    out[24] = out[16]; /* fragment_length = total */
+    /* body already at out+25 */
+
+    d->ch_len = rec_len;
+    d->ch_pos = 0;
+    dtls_srtp_ch_reasm_reset(d);
+    return 0;
+}
+
+static int dtls_srtp_ch_add_fragment(dtls_srtp_t *d, const uint8_t *rec, size_t rec_size)
+{
+    const uint8_t *hs = rec + DTLS_RECORD_HDR_LEN;
+    size_t payload = rec_size - DTLS_RECORD_HDR_LEN;
+    size_t total, frag_off, frag_len;
+    uint16_t msg_seq;
+    uint8_t *mask;
+    uint8_t *body;
+    size_t i;
+
+    if (payload < DTLS_HS_HDR_LEN || hs[0] != 0x01) {
+        return -1;
+    }
+    total = ((size_t)hs[1] << 16) | ((size_t)hs[2] << 8) | hs[3];
+    msg_seq = ((uint16_t)hs[4] << 8) | hs[5];
+    frag_off = ((size_t)hs[6] << 16) | ((size_t)hs[7] << 8) | hs[8];
+    frag_len = ((size_t)hs[9] << 16) | ((size_t)hs[10] << 8) | hs[11];
+
+    if (total == 0 || frag_off + frag_len > total || DTLS_HS_HDR_LEN + frag_len > payload) {
+        return -1;
+    }
+
+    if (!d->ch_active || d->ch_msg_seq != msg_seq || d->ch_total != total) {
+        if (dtls_srtp_ch_ensure_msg_buf(d, total) != 0) {
+            return -1;
+        }
+        dtls_srtp_ch_pending_clear(d);
+        memcpy(d->ch_rec_hdr, rec, DTLS_RECORD_HDR_LEN);
+        d->ch_total = total;
+        d->ch_msg_seq = msg_seq;
+        d->ch_got = 0;
+        d->ch_active = 1;
+        memset(dtls_srtp_ch_mask(d), 0, (total + 7) / 8);
+    }
+
+    mask = dtls_srtp_ch_mask(d);
+    body = d->ch_buf + DTLS_RECORD_HDR_LEN + DTLS_HS_HDR_LEN;
+    for (i = 0; i < frag_len; i++) {
+        size_t idx = frag_off + i;
+        size_t byte = idx / 8;
+        uint8_t bit = (uint8_t)(1u << (idx % 8));
+        if ((mask[byte] & bit) == 0) {
+            mask[byte] |= bit;
+            body[idx] = hs[DTLS_HS_HDR_LEN + i];
+            d->ch_got++;
+        }
+    }
+    if (d->ch_got >= d->ch_total) {
+        return dtls_srtp_ch_finish(d);
+    }
+    return 0;
+}
+
+/* Returns 1 if data ready to serve, 0 need more, -1 error. */
+static int dtls_srtp_ch_handle_datagram(dtls_srtp_t *d, const uint8_t *data, int len)
+{
+    if (len < DTLS_RECORD_HDR_LEN) {
+        return -1;
+    }
+    uint16_t rec_len = ((uint16_t)data[11] << 8) | data[12];
+    int rec_size = DTLS_RECORD_HDR_LEN + (int)rec_len;
+
+    if (rec_size != len) {
+        /* Expect one DTLS record per UDP datagram (WebRTC). */
+        if (rec_size > len) {
+            return -1;
+        }
+    }
+
+    if (data[0] == 0x16 && rec_len >= DTLS_HS_HDR_LEN) {
+        const uint8_t *hs = data + DTLS_RECORD_HDR_LEN;
+        size_t total = ((size_t)hs[1] << 16) | ((size_t)hs[2] << 8) | hs[3];
+        size_t frag_off = ((size_t)hs[6] << 16) | ((size_t)hs[7] << 8) | hs[8];
+        size_t frag_len = ((size_t)hs[9] << 16) | ((size_t)hs[10] << 8) | hs[11];
+
+        if (hs[0] == 0x01 && (frag_off != 0 || frag_len != total)) {
+            int ret = dtls_srtp_ch_add_fragment(d, data, (size_t)rec_size);
+            if (ret < 0) {
+                return -1;
+            }
+            return (d->ch_len > d->ch_pos) ? 1 : 0;
+        }
+    }
+
+    /* Unfragmented: queue datagram as-is (drop any partial assembly). */
+    dtls_srtp_ch_reasm_reset(d);
+    if (dtls_srtp_ch_queue_datagram(d, data, (size_t)len) != 0) {
+        return -1;
+    }
+    return 1;
+}
+
+/* Max UDP pulls while waiting for remaining ClientHello fragments in one BIO call. */
+#define DTLS_CH_RECV_MAX_ATTEMPTS 4
+
+static int dtls_srtp_bio_recv(void *ctx, unsigned char *buf, size_t len)
+{
+    dtls_srtp_t *d = (dtls_srtp_t *)ctx;
+    uint8_t pkt[DTLS_MTU_SIZE];
+    int ret;
+    int proc;
+    int attempts = 0;
+
+    if (d->ch_pos < d->ch_len && d->ch_buf) {
+        size_t n = len;
+        size_t avail = d->ch_len - d->ch_pos;
+        if (n > avail) {
+            n = avail;
+        }
+        memcpy(buf, d->ch_buf + d->ch_pos, n);
+        d->ch_pos += n;
+        if (d->ch_pos >= d->ch_len && !d->ch_active) {
+            /* Free after fully consumed to avoid keeping memory between handshakes. */
+            dtls_srtp_ch_reasm_free(d);
+        }
+        return (int)n;
+    }
+
+    for (;;) {
+        ret = d->udp_recv(ctx, pkt, sizeof(pkt));
+        if (ret < 0) {
+            /* Do not map errors to WANT_READ — that busy-loops handshake + agent_recv. */
+            return ret;
+        }
+        if (ret == 0) {
+            return MBEDTLS_ERR_SSL_WANT_READ;
+        }
+        proc = dtls_srtp_ch_handle_datagram(d, pkt, ret);
+        if (proc < 0) {
+            /* Fallback: queue raw datagram. */
+            dtls_srtp_ch_reasm_reset(d);
+            if (dtls_srtp_ch_queue_datagram(d, pkt, (size_t)ret) != 0) {
+                return MBEDTLS_ERR_SSL_ALLOC_FAILED;
+            }
+            break;
+        }
+        if (proc > 0) {
+            break;
+        }
+        /* Need more ClientHello fragments; bound pulls to avoid a dead loop. */
+        if (++attempts >= DTLS_CH_RECV_MAX_ATTEMPTS) {
+            return MBEDTLS_ERR_SSL_WANT_READ;
+        }
+    }
+
+    if (d->ch_pos < d->ch_len && d->ch_buf) {
+        size_t n = len;
+        size_t avail = d->ch_len - d->ch_pos;
+        if (n > avail) {
+            n = avail;
+        }
+        memcpy(buf, d->ch_buf + d->ch_pos, n);
+        d->ch_pos += n;
+        return (int)n;
+    }
+    return MBEDTLS_ERR_SSL_WANT_READ;
+}
+#endif /* mbedTLS < 3.6.6 */
+
 static int dtls_srtp_do_handshake(dtls_srtp_t *dtls_srtp)
 {
     int ret;
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+    int want_read_loops = 0;
+#endif
     static mbedtls_timing_delay_context timer;
     mbedtls_ssl_set_timer_cb(&dtls_srtp->ssl, &timer, mbedtls_timing_set_delay, mbedtls_timing_get_delay);
     mbedtls_ssl_set_export_keys_cb(&dtls_srtp->ssl, dtls_srtp_key_derivation, dtls_srtp);
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+    mbedtls_ssl_set_bio(&dtls_srtp->ssl, dtls_srtp, dtls_srtp->udp_send, dtls_srtp_bio_recv, NULL);
+#else
     mbedtls_ssl_set_bio(&dtls_srtp->ssl, dtls_srtp, dtls_srtp->udp_send, dtls_srtp->udp_recv, NULL);
+#endif
 
     do {
         ret = mbedtls_ssl_handshake(&dtls_srtp->ssl);
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+        if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
+            /* Yield when waiting for more CH fragments, or after too many WANT_READ spins. */
+            if (dtls_srtp->ch_active || ++want_read_loops >= DTLS_CH_RECV_MAX_ATTEMPTS) {
+                break;
+            }
+            continue;
+        }
+#endif
     } while (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE);
     if (ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
         mbedtls_ssl_session_reset(&dtls_srtp->ssl);
@@ -197,9 +487,25 @@ static int dtls_srtp_handshake_server(dtls_srtp_t *dtls_srtp)
         unsigned char client_ip[] = "test";
         mbedtls_ssl_session_reset(&dtls_srtp->ssl);
         mbedtls_ssl_set_client_transport_id(&dtls_srtp->ssl, client_ip, sizeof(client_ip));
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+        /* Drop stale queued bytes; keep in-progress fragment assembly in ch_buf. */
+        if (!dtls_srtp->ch_active) {
+            dtls_srtp_ch_pending_clear(dtls_srtp);
+        }
+#endif
         ret = dtls_srtp_do_handshake(dtls_srtp);
         if (ret != MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED) {
-            if (ret != 0) {
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+            /* Partial fragmented ClientHello buffered; peer will call handshake again. */
+            if (ret == MBEDTLS_ERR_SSL_WANT_READ && dtls_srtp->ch_active) {
+                return ret;
+            }
+            /* Hard failure: drop partial reassembly so next attempt starts clean. */
+            if (ret != 0 && ret != MBEDTLS_ERR_SSL_WANT_READ) {
+                dtls_srtp_ch_reasm_free(dtls_srtp);
+            }
+#endif
+            if (ret != 0 && ret != MBEDTLS_ERR_SSL_WANT_READ) {
                 ESP_LOGE(TAG, "Server handshake return -0x%.4x", (unsigned int)-ret);
             }
             break;
@@ -240,6 +546,11 @@ int dtls_srtp_handshake(dtls_srtp_t *dtls_srtp)
     }
     if (ret == 0) {
         ESP_LOGI(TAG, "%s handshake success", dtls_srtp->role == DTLS_SRTP_ROLE_SERVER ? "Server" : "Client");
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+        /* Datachannel/DTLS app data must not pay reassembly BIO overhead. */
+        mbedtls_ssl_set_bio(&dtls_srtp->ssl, dtls_srtp, dtls_srtp->udp_send, dtls_srtp->udp_recv, NULL);
+        dtls_srtp_ch_reasm_free(dtls_srtp);
+#endif
     }
     mbedtls_dtls_srtp_info dtls_srtp_negotiation_result;
     mbedtls_ssl_get_dtls_srtp_negotiation_result(&dtls_srtp->ssl, &dtls_srtp_negotiation_result);
