@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.5.2
+
+### Bug Fixes
+
+- Fixed handshake fail return `-0x7080` on mbedTLS version below than v3.6.6
+
 ## v1.5.1
 
 ### Bug Fixes

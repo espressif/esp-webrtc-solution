@@ -96,6 +96,22 @@ typedef struct {
     media_lib_mutex_handle_t lock;
     int                      (*udp_send)(void *ctx, const unsigned char *buf, size_t len);
     int                      (*udp_recv)(void *ctx, unsigned char *buf, size_t len);
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+    /*
+     * Lazy ClientHello reassembly (mbedTLS < 3.6.6).
+     * New mbedTLS reassembles inside ssl->in_buf via read_record(); we only
+     * allocate ~message-sized heap while a fragmented CH is in progress.
+     */
+    uint8_t                 *ch_buf;         /* pending datagram or reassembled record */
+    size_t                   ch_cap;
+    size_t                   ch_len;
+    size_t                   ch_pos;
+    size_t                   ch_total;       /* HS message length when assembling */
+    size_t                   ch_got;         /* covered body bytes */
+    uint16_t                 ch_msg_seq;
+    uint8_t                  ch_rec_hdr[13];
+    uint8_t                  ch_active;      /* assembling fragmented ClientHello */
+#endif
 } dtls_srtp_t;
 
 /**
