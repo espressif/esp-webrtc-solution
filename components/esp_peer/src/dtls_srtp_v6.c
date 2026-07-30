@@ -37,7 +37,14 @@ static int dtls_srtp_selfsign_cert(dtls_srtp_t *dtls_srtp, bool export_for_cache
     }
     psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
     psa_set_key_bits(&attributes, 256);
-    psa_set_key_algorithm(&attributes, PSA_ALG_ECDSA(PSA_ALG_SHA_256));
+    /*
+     * Must match MBEDTLS_PK_ALG_ECDSA() (deterministic ECDSA when
+     * CONFIG_MBEDTLS_ECDSA_DETERMINISTIC=y). ssl_pick_cert() asks for that
+     * exact PSA alg; PSA_ALG_ECDSA(...) makes every ECDHE_ECDSA suite look
+     * unusable → MBEDTLS_ERR_SSL_HANDSHAKE_FAILURE (-0x6e00) on first use
+     * of a freshly wrapped key (cached PEM reload on the next connection worked).
+     */
+    psa_set_key_algorithm(&attributes, MBEDTLS_PK_ALG_ECDSA(PSA_ALG_ANY_HASH));
     psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_HASH | PSA_KEY_USAGE_VERIFY_HASH | PSA_KEY_USAGE_EXPORT);
     status = psa_generate_key(&attributes, &dtls_srtp->psa_key_id);
     if (status != PSA_SUCCESS) {
@@ -103,6 +110,33 @@ _exit:
     return ret;
 }
 
+#ifdef DTLS_SIGN_ONCE
+/* Prefer PEM-imported key so first handshake matches subsequent cached inits. */
+static int dtls_srtp_reload_pkey_from_cache(dtls_srtp_t *dtls_srtp)
+{
+    int ret;
+    size_t key_pem_len = strlen((const char *)s_cached_key_pem) + 1;
+
+    if (!s_cached_cert_ready) {
+        return -1;
+    }
+    if (dtls_srtp->psa_key_id != MBEDTLS_SVC_KEY_ID_INIT) {
+        mbedtls_pk_free(&dtls_srtp->pkey);
+        mbedtls_pk_init(&dtls_srtp->pkey);
+        psa_destroy_key(dtls_srtp->psa_key_id);
+        dtls_srtp->psa_key_id = MBEDTLS_SVC_KEY_ID_INIT;
+    } else {
+        mbedtls_pk_free(&dtls_srtp->pkey);
+        mbedtls_pk_init(&dtls_srtp->pkey);
+    }
+    ret = mbedtls_pk_parse_key(&dtls_srtp->pkey, s_cached_key_pem, key_pem_len, NULL, 0);
+    if (ret != 0) {
+        ESP_LOGE(TAG, "mbedtls_pk_parse_key(cache) failed, ret=%d", ret);
+    }
+    return ret;
+}
+#endif
+
 static int dtls_srtp_try_gen_cert(dtls_srtp_t *dtls_srtp)
 {
     int ret = 0;
@@ -120,22 +154,35 @@ static int dtls_srtp_try_gen_cert(dtls_srtp_t *dtls_srtp)
 #ifdef DTLS_SIGN_ONCE
     if (s_cached_cert_ready) {
         size_t cert_pem_len = strlen((const char *)s_cached_cert_pem) + 1;
-        size_t key_pem_len = strlen((const char *)s_cached_key_pem) + 1;
+        /* Cookie/HMAC and later handshake ops need PSA even when cert is cached. */
+        psa_status_t status = psa_crypto_init();
+        if (status != PSA_SUCCESS && status != PSA_ERROR_BAD_STATE) {
+            ESP_LOGE(TAG, "psa_crypto_init failed, status=%d", (int)status);
+            return -1;
+        }
         ret = mbedtls_x509_crt_parse(&dtls_srtp->cert, s_cached_cert_pem, cert_pem_len);
         if (ret == 0) {
-            ret = mbedtls_pk_parse_key(&dtls_srtp->pkey, s_cached_key_pem, key_pem_len, NULL, 0);
+            ret = dtls_srtp_reload_pkey_from_cache(dtls_srtp);
         }
         if (ret == 0) {
             return 0;
         }
         ESP_LOGE(TAG, "Use cached cert/key failed, fallback to regenerate, ret=%d", ret);
+        mbedtls_x509_crt_free(&dtls_srtp->cert);
+        mbedtls_pk_free(&dtls_srtp->pkey);
+        mbedtls_x509_crt_init(&dtls_srtp->cert);
+        mbedtls_pk_init(&dtls_srtp->pkey);
     }
 #endif
     ret = dtls_srtp_selfsign_cert(dtls_srtp, true);
     if (ret != 0) {
         return ret;
     }
-    return 0;
+#ifdef DTLS_SIGN_ONCE
+    /* Drop PSA-wrapped key; use the same PEM import path as later connections. */
+    ret = dtls_srtp_reload_pkey_from_cache(dtls_srtp);
+#endif
+    return ret;
 }
 
 int dtls_srtp_gen_cert(void)
@@ -182,15 +229,17 @@ dtls_srtp_t *dtls_srtp_init(dtls_srtp_cfg_t *cfg)
         if (dtls_srtp->role == DTLS_SRTP_ROLE_SERVER) {
             ret = mbedtls_ssl_config_defaults(&dtls_srtp->conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_DATAGRAM,
                                               MBEDTLS_SSL_PRESET_DEFAULT);
+            BREAK_ON_FAIL(ret);
             mbedtls_ssl_cookie_init(&dtls_srtp->cookie_ctx);
-            mbedtls_ssl_cookie_setup(&dtls_srtp->cookie_ctx);
+            ret = mbedtls_ssl_cookie_setup(&dtls_srtp->cookie_ctx);
+            BREAK_ON_FAIL(ret);
             mbedtls_ssl_conf_dtls_cookies(&dtls_srtp->conf, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check,
                                           &dtls_srtp->cookie_ctx);
         } else {
             ret = mbedtls_ssl_config_defaults(&dtls_srtp->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_DATAGRAM,
                                               MBEDTLS_SSL_PRESET_DEFAULT);
+            BREAK_ON_FAIL(ret);
         }
-        BREAK_ON_FAIL(ret);
         dtls_srtp_conf_force_dtls12(&dtls_srtp->conf);
         mbedtls_ssl_conf_ca_chain(&dtls_srtp->conf, &dtls_srtp->cert, NULL);
         ret = mbedtls_ssl_conf_own_cert(&dtls_srtp->conf, &dtls_srtp->cert, &dtls_srtp->pkey);
@@ -235,6 +284,9 @@ void dtls_srtp_deinit(dtls_srtp_t *dtls_srtp)
     if (dtls_srtp->role == DTLS_SRTP_ROLE_SERVER) {
         mbedtls_ssl_cookie_free(&dtls_srtp->cookie_ctx);
     }
+#if defined(DTLS_USE_CH_REASM_BIO)
+    dtls_srtp_ch_reasm_free(dtls_srtp);
+#endif
     if (dtls_srtp->srtp_in) {
         srtp_dealloc(dtls_srtp->srtp_in);
         dtls_srtp->srtp_in = NULL;
@@ -258,8 +310,13 @@ void dtls_srtp_reset_session(dtls_srtp_t *dtls_srtp, dtls_srtp_role_t role)
         dtls_srtp->srtp_in = NULL;
         srtp_dealloc(dtls_srtp->srtp_out);
         dtls_srtp->srtp_out = NULL;
-        mbedtls_ssl_session_reset(&dtls_srtp->ssl);
     }
+    /* Always reset SSL so a prior failed handshake cannot poison the next one. */
+    mbedtls_ssl_session_reset(&dtls_srtp->ssl);
+    mbedtls_timing_set_delay(&dtls_srtp->timer, 0, 0);
+#if defined(DTLS_USE_CH_REASM_BIO)
+    dtls_srtp_ch_reasm_free(dtls_srtp);
+#endif
     if (role != dtls_srtp->role) {
         if (dtls_srtp->role == DTLS_SRTP_ROLE_SERVER) {
             mbedtls_ssl_cookie_free(&dtls_srtp->cookie_ctx);
@@ -270,7 +327,9 @@ void dtls_srtp_reset_session(dtls_srtp_t *dtls_srtp, dtls_srtp_role_t role)
             dtls_srtp_conf_force_dtls12(&dtls_srtp->conf);
 
             mbedtls_ssl_cookie_init(&dtls_srtp->cookie_ctx);
-            mbedtls_ssl_cookie_setup(&dtls_srtp->cookie_ctx);
+            if (mbedtls_ssl_cookie_setup(&dtls_srtp->cookie_ctx) != 0) {
+                ESP_LOGE(TAG, "cookie_setup failed");
+            }
             mbedtls_ssl_conf_dtls_cookies(&dtls_srtp->conf, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check,
                                           &dtls_srtp->cookie_ctx);
         } else {
