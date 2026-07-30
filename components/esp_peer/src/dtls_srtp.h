@@ -51,6 +51,17 @@ extern "C" {
 #define DTLS_SRTP_KEY_MATERIAL_LENGTH 60
 #define DTLS_SRTP_FINGERPRINT_LENGTH  160
 
+/*
+ * ClientHello reassembly BIO:
+ * - mbedTLS < 3.6.6: native path rejects fragmented CH (-0x7080)
+ * - mbedTLS >= 3.6.6 / 4.x: native DTLS CH reassembly exists; do not wrap BIO
+ *   (extra BIO previously truncated multi-record datagrams after CKE and hung
+ *   the handshake). IDF v6 first-boot -0x6e00 was PSA ECDSA policy, not CH reasm.
+ */
+#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+#define DTLS_USE_CH_REASM_BIO 1
+#endif
+
 /**
  * @brief  DTLS role
  */
@@ -96,11 +107,11 @@ typedef struct {
     media_lib_mutex_handle_t lock;
     int                      (*udp_send)(void *ctx, const unsigned char *buf, size_t len);
     int                      (*udp_recv)(void *ctx, unsigned char *buf, size_t len);
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+    mbedtls_timing_delay_context timer; /* per-session DTLS timer (avoid static reuse) */
+#if defined(DTLS_USE_CH_REASM_BIO)
     /*
-     * Lazy ClientHello reassembly (mbedTLS < 3.6.6).
-     * New mbedTLS reassembles inside ssl->in_buf via read_record(); we only
-     * allocate ~message-sized heap while a fragmented CH is in progress.
+     * Lazy ClientHello reassembly BIO.
+     * Allocate ~message-sized heap only while a fragmented ClientHello is active.
      */
     uint8_t                 *ch_buf;         /* pending datagram or reassembled record */
     size_t                   ch_cap;

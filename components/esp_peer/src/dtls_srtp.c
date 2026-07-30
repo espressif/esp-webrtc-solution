@@ -219,7 +219,7 @@ void dtls_srtp_deinit(dtls_srtp_t *dtls_srtp)
     if (dtls_srtp->role == DTLS_SRTP_ROLE_SERVER) {
         mbedtls_ssl_cookie_free(&dtls_srtp->cookie_ctx);
     }
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+#if defined(DTLS_USE_CH_REASM_BIO)
     dtls_srtp_ch_reasm_free(dtls_srtp);
 #endif
     if (dtls_srtp->srtp_in) {
@@ -245,8 +245,12 @@ void dtls_srtp_reset_session(dtls_srtp_t *dtls_srtp, dtls_srtp_role_t role)
         dtls_srtp->srtp_in = NULL;
         srtp_dealloc(dtls_srtp->srtp_out);
         dtls_srtp->srtp_out = NULL;
-        mbedtls_ssl_session_reset(&dtls_srtp->ssl);
     }
+    mbedtls_ssl_session_reset(&dtls_srtp->ssl);
+    mbedtls_timing_set_delay(&dtls_srtp->timer, 0, 0);
+#if defined(DTLS_USE_CH_REASM_BIO)
+    dtls_srtp_ch_reasm_free(dtls_srtp);
+#endif
     if (role != dtls_srtp->role) {
         if (dtls_srtp->role == DTLS_SRTP_ROLE_SERVER) {
             mbedtls_ssl_cookie_free(&dtls_srtp->cookie_ctx);

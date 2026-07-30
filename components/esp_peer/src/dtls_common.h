@@ -55,6 +55,7 @@ static int dtls_srtp_entropy_func(void *ctx, unsigned char *buf, size_t len)
 /* Pin DTLS stack to 1.2 for stable interop across mbedTLS versions. */
 static void dtls_srtp_conf_force_dtls12(mbedtls_ssl_config *conf)
 {
+    mbedtls_ssl_conf_transport(conf, MBEDTLS_SSL_TRANSPORT_DATAGRAM);
     mbedtls_ssl_conf_min_tls_version(conf, MBEDTLS_SSL_VERSION_TLS1_2);
     mbedtls_ssl_conf_max_tls_version(conf, MBEDTLS_SSL_VERSION_TLS1_2);
 }
@@ -172,14 +173,11 @@ static void dtls_srtp_key_derivation(void *context, mbedtls_ssl_key_export_type 
     dtls_srtp->state = DTLS_SRTP_STATE_CONNECTED;
 }
 
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+#if defined(DTLS_USE_CH_REASM_BIO)
 /*
- * mbedTLS < 3.6.6: initial ClientHello path bypasses read_record() and rejects
- * fragments (-0x7080). mbedTLS >= 3.6.6 calls read_record() and reassembles in
- * the existing ssl->in_buf (no extra dedicated buffers).
- *
- * Here we mirror that idea lightly: one datagram on stack (MTU), and one
- * message-sized heap buffer only while a fragmented ClientHello is active.
+ * Fragmented ClientHello reassembly BIO (see DTLS_USE_CH_REASM_BIO).
+ * One datagram on stack (MTU), and one message-sized heap buffer only while a
+ * fragmented ClientHello is active.
  */
 #define DTLS_RECORD_HDR_LEN 13
 #define DTLS_HS_HDR_LEN     12
@@ -260,6 +258,39 @@ static int dtls_srtp_ch_queue_datagram(dtls_srtp_t *d, const uint8_t *data, size
     return 0;
 }
 
+/*
+ * mbedTLS TLS1.2-only server maps DTLS wire versions via read_version():
+ *   0xfefd -> TLS1.2 (ok), 0xfeff -> TLS1.1 -> MBEDTLS_ERR_SSL_BAD_PROTOCOL_VERSION.
+ * Browsers often put DTLS 1.0 (0xfeff) in ClientHello.client_version for
+ * HelloVerify compatibility while still negotiating DTLS 1.2. Rewrite to 0xfefd.
+ */
+static void dtls_srtp_ch_normalize_legacy_version(uint8_t *rec, size_t len)
+{
+    const size_t ver_off = DTLS_RECORD_HDR_LEN + DTLS_HS_HDR_LEN;
+    if (len < ver_off + 2 || rec[0] != 0x16) {
+        return;
+    }
+    if (rec[DTLS_RECORD_HDR_LEN] != 0x01) {
+        return; /* not ClientHello */
+    }
+    /* Record layer often carries DTLS 1.0 (feff); keep content-version authoritative. */
+    if (rec[1] == 0xfe && rec[2] == 0xff) {
+        rec[2] = 0xfd;
+    }
+    ESP_LOGD(TAG, "ClientHello version %02x%02x (rec %02x%02x len=%u)",
+             rec[ver_off], rec[ver_off + 1], rec[1], rec[2], (unsigned)len);
+    if (rec[ver_off] == 0xfe && rec[ver_off + 1] == 0xff) {
+        rec[ver_off + 1] = 0xfd;
+        ESP_LOGD(TAG, "Rewrite ClientHello version feff->fefd for mbedTLS");
+    }
+}
+
+/* DTLS application content types are in 20..63 (RFC 6347). */
+static inline int dtls_srtp_is_dtls_record(const uint8_t *data, int len)
+{
+    return (len >= DTLS_RECORD_HDR_LEN) && (data[0] > 19) && (data[0] < 64);
+}
+
 static int dtls_srtp_ch_finish(dtls_srtp_t *d)
 {
     size_t hs_len = DTLS_HS_HDR_LEN + d->ch_total;
@@ -280,6 +311,7 @@ static int dtls_srtp_ch_finish(dtls_srtp_t *d)
     out[23] = out[15];
     out[24] = out[16]; /* fragment_length = total */
     /* body already at out+25 */
+    dtls_srtp_ch_normalize_legacy_version(out, rec_len);
 
     d->ch_len = rec_len;
     d->ch_pos = 0;
@@ -319,7 +351,11 @@ static int dtls_srtp_ch_add_fragment(dtls_srtp_t *d, const uint8_t *rec, size_t 
         d->ch_msg_seq = msg_seq;
         d->ch_got = 0;
         d->ch_active = 1;
+        body = d->ch_buf + DTLS_RECORD_HDR_LEN + DTLS_HS_HDR_LEN;
+        memset(body, 0, total);
         memset(dtls_srtp_ch_mask(d), 0, (total + 7) / 8);
+        ESP_LOGD(TAG, "ClientHello reasm start seq=%u total=%u", (unsigned)msg_seq,
+                 (unsigned)total);
     }
 
     mask = dtls_srtp_ch_mask(d);
@@ -334,26 +370,27 @@ static int dtls_srtp_ch_add_fragment(dtls_srtp_t *d, const uint8_t *rec, size_t 
             d->ch_got++;
         }
     }
+    ESP_LOGD(TAG, "ClientHello frag off=%u len=%u got=%u/%u",
+             (unsigned)frag_off, (unsigned)frag_len, (unsigned)d->ch_got,
+             (unsigned)d->ch_total);
     if (d->ch_got >= d->ch_total) {
         return dtls_srtp_ch_finish(d);
     }
     return 0;
 }
 
-/* Returns 1 if data ready to serve, 0 need more, -1 error. */
+/* Returns 1 if data ready to serve, 0 need more, -1 skip/ignore this datagram. */
 static int dtls_srtp_ch_handle_datagram(dtls_srtp_t *d, const uint8_t *data, int len)
 {
-    if (len < DTLS_RECORD_HDR_LEN) {
-        return -1;
+    if (!dtls_srtp_is_dtls_record(data, len)) {
+        /* ICE/STUN/RTP can still appear on the selected pair; never feed to mbedTLS. */
+        return d->ch_active ? 0 : -1;
     }
     uint16_t rec_len = ((uint16_t)data[11] << 8) | data[12];
     int rec_size = DTLS_RECORD_HDR_LEN + (int)rec_len;
 
-    if (rec_size != len) {
-        /* Expect one DTLS record per UDP datagram (WebRTC). */
-        if (rec_size > len) {
-            return -1;
-        }
+    if (rec_size > len) {
+        return d->ch_active ? 0 : -1;
     }
 
     if (data[0] == 0x16 && rec_len >= DTLS_HS_HDR_LEN) {
@@ -365,22 +402,52 @@ static int dtls_srtp_ch_handle_datagram(dtls_srtp_t *d, const uint8_t *data, int
         if (hs[0] == 0x01 && (frag_off != 0 || frag_len != total)) {
             int ret = dtls_srtp_ch_add_fragment(d, data, (size_t)rec_size);
             if (ret < 0) {
-                return -1;
+                /* Keep gathering; do not fall back to a raw partial ClientHello. */
+                ESP_LOGW(TAG, "ClientHello fragment rejected (total=%u off=%u len=%u)",
+                         (unsigned)total, (unsigned)frag_off, (unsigned)frag_len);
+                return 0;
             }
             return (d->ch_len > d->ch_pos) ? 1 : 0;
         }
     }
 
-    /* Unfragmented: queue datagram as-is (drop any partial assembly). */
+    /* Unfragmented DTLS: queue the full UDP datagram (may contain several
+     * records, e.g. CKE+CCS+Finished). Truncating to the first record drops
+     * the rest and hangs the handshake after key derivation. */
     dtls_srtp_ch_reasm_reset(d);
     if (dtls_srtp_ch_queue_datagram(d, data, (size_t)len) != 0) {
         return -1;
     }
+    dtls_srtp_ch_normalize_legacy_version(d->ch_buf, d->ch_len);
     return 1;
 }
 
 /* Max UDP pulls while waiting for remaining ClientHello fragments in one BIO call. */
-#define DTLS_CH_RECV_MAX_ATTEMPTS 4
+#define DTLS_CH_RECV_MAX_ATTEMPTS 8
+
+/*
+ * DTLS BIO must return one full datagram per call. Returning a partial
+ * reassembled ClientHello makes mbedTLS treat the slice as a complete record.
+ */
+static int dtls_srtp_bio_serve_pending(dtls_srtp_t *d, unsigned char *buf, size_t len)
+{
+    size_t avail;
+
+    if (d->ch_buf == NULL || d->ch_pos >= d->ch_len) {
+        return MBEDTLS_ERR_SSL_WANT_READ;
+    }
+    avail = d->ch_len - d->ch_pos;
+    if (len < avail) {
+        ESP_LOGE(TAG, "DTLS BIO buffer too small (%u < %u)", (unsigned)len, (unsigned)avail);
+        return MBEDTLS_ERR_SSL_BUFFER_TOO_SMALL;
+    }
+    memcpy(buf, d->ch_buf + d->ch_pos, avail);
+    d->ch_pos = d->ch_len;
+    if (!d->ch_active) {
+        dtls_srtp_ch_reasm_free(d);
+    }
+    return (int)avail;
+}
 
 static int dtls_srtp_bio_recv(void *ctx, unsigned char *buf, size_t len)
 {
@@ -391,18 +458,7 @@ static int dtls_srtp_bio_recv(void *ctx, unsigned char *buf, size_t len)
     int attempts = 0;
 
     if (d->ch_pos < d->ch_len && d->ch_buf) {
-        size_t n = len;
-        size_t avail = d->ch_len - d->ch_pos;
-        if (n > avail) {
-            n = avail;
-        }
-        memcpy(buf, d->ch_buf + d->ch_pos, n);
-        d->ch_pos += n;
-        if (d->ch_pos >= d->ch_len && !d->ch_active) {
-            /* Free after fully consumed to avoid keeping memory between handshakes. */
-            dtls_srtp_ch_reasm_free(d);
-        }
-        return (int)n;
+        return dtls_srtp_bio_serve_pending(d, buf, len);
     }
 
     for (;;) {
@@ -416,46 +472,39 @@ static int dtls_srtp_bio_recv(void *ctx, unsigned char *buf, size_t len)
         }
         proc = dtls_srtp_ch_handle_datagram(d, pkt, ret);
         if (proc < 0) {
-            /* Fallback: queue raw datagram. */
-            dtls_srtp_ch_reasm_reset(d);
-            if (dtls_srtp_ch_queue_datagram(d, pkt, (size_t)ret) != 0) {
-                return MBEDTLS_ERR_SSL_ALLOC_FAILED;
+            /* Non-DTLS or unusable packet before assembly started: keep reading. */
+            if (++attempts >= DTLS_CH_RECV_MAX_ATTEMPTS) {
+                return MBEDTLS_ERR_SSL_WANT_READ;
             }
-            break;
+            continue;
         }
         if (proc > 0) {
             break;
         }
-        /* Need more ClientHello fragments; bound pulls to avoid a dead loop. */
+        /* Need more ClientHello fragments (or skipped ICE/STUN while assembling). */
         if (++attempts >= DTLS_CH_RECV_MAX_ATTEMPTS) {
             return MBEDTLS_ERR_SSL_WANT_READ;
         }
     }
 
-    if (d->ch_pos < d->ch_len && d->ch_buf) {
-        size_t n = len;
-        size_t avail = d->ch_len - d->ch_pos;
-        if (n > avail) {
-            n = avail;
-        }
-        memcpy(buf, d->ch_buf + d->ch_pos, n);
-        d->ch_pos += n;
-        return (int)n;
-    }
-    return MBEDTLS_ERR_SSL_WANT_READ;
+    return dtls_srtp_bio_serve_pending(d, buf, len);
 }
-#endif /* mbedTLS < 3.6.6 */
+#endif /* DTLS_USE_CH_REASM_BIO */
 
 static int dtls_srtp_do_handshake(dtls_srtp_t *dtls_srtp)
 {
     int ret;
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+#if defined(DTLS_USE_CH_REASM_BIO)
     int want_read_loops = 0;
 #endif
-    static mbedtls_timing_delay_context timer;
-    mbedtls_ssl_set_timer_cb(&dtls_srtp->ssl, &timer, mbedtls_timing_set_delay, mbedtls_timing_get_delay);
+    /* Re-pin before every attempt; -0x6e00 is consistent with STREAM mapping of fefd. */
+    dtls_srtp_conf_force_dtls12(&dtls_srtp->conf);
+    /* Clear any leftover delay from a previous session on this instance. */
+    mbedtls_timing_set_delay(&dtls_srtp->timer, 0, 0);
+    mbedtls_ssl_set_timer_cb(&dtls_srtp->ssl, &dtls_srtp->timer, mbedtls_timing_set_delay,
+                             mbedtls_timing_get_delay);
     mbedtls_ssl_set_export_keys_cb(&dtls_srtp->ssl, dtls_srtp_key_derivation, dtls_srtp);
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+#if defined(DTLS_USE_CH_REASM_BIO)
     mbedtls_ssl_set_bio(&dtls_srtp->ssl, dtls_srtp, dtls_srtp->udp_send, dtls_srtp_bio_recv, NULL);
 #else
     mbedtls_ssl_set_bio(&dtls_srtp->ssl, dtls_srtp, dtls_srtp->udp_send, dtls_srtp->udp_recv, NULL);
@@ -463,14 +512,20 @@ static int dtls_srtp_do_handshake(dtls_srtp_t *dtls_srtp)
 
     do {
         ret = mbedtls_ssl_handshake(&dtls_srtp->ssl);
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+#if defined(DTLS_USE_CH_REASM_BIO)
         if (ret == MBEDTLS_ERR_SSL_WANT_READ) {
-            /* Yield when waiting for more CH fragments, or after too many WANT_READ spins. */
-            if (dtls_srtp->ch_active || ++want_read_loops >= DTLS_CH_RECV_MAX_ATTEMPTS) {
+            /*
+             * While a fragmented ClientHello is buffered, keep calling so the
+             * BIO can pull the remaining UDP fragments in this handshake attempt.
+             * Only yield to the peer after too many empty reads.
+             */
+            if (++want_read_loops >= (dtls_srtp->ch_active ? (DTLS_CH_RECV_MAX_ATTEMPTS * 4)
+                                                           : DTLS_CH_RECV_MAX_ATTEMPTS)) {
                 break;
             }
             continue;
         }
+        want_read_loops = 0;
 #endif
     } while (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE);
     if (ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
@@ -485,9 +540,10 @@ static int dtls_srtp_handshake_server(dtls_srtp_t *dtls_srtp)
     ESP_LOGI(TAG, "Start to do server handshake");
     while (1) {
         unsigned char client_ip[] = "test";
+        dtls_srtp_conf_force_dtls12(&dtls_srtp->conf);
         mbedtls_ssl_session_reset(&dtls_srtp->ssl);
         mbedtls_ssl_set_client_transport_id(&dtls_srtp->ssl, client_ip, sizeof(client_ip));
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+#if defined(DTLS_USE_CH_REASM_BIO)
         /* Drop stale queued bytes; keep in-progress fragment assembly in ch_buf. */
         if (!dtls_srtp->ch_active) {
             dtls_srtp_ch_pending_clear(dtls_srtp);
@@ -495,7 +551,7 @@ static int dtls_srtp_handshake_server(dtls_srtp_t *dtls_srtp)
 #endif
         ret = dtls_srtp_do_handshake(dtls_srtp);
         if (ret != MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED) {
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+#if defined(DTLS_USE_CH_REASM_BIO)
             /* Partial fragmented ClientHello buffered; peer will call handshake again. */
             if (ret == MBEDTLS_ERR_SSL_WANT_READ && dtls_srtp->ch_active) {
                 return ret;
@@ -546,7 +602,7 @@ int dtls_srtp_handshake(dtls_srtp_t *dtls_srtp)
     }
     if (ret == 0) {
         ESP_LOGI(TAG, "%s handshake success", dtls_srtp->role == DTLS_SRTP_ROLE_SERVER ? "Server" : "Client");
-#if defined(MBEDTLS_VERSION_NUMBER) && (MBEDTLS_VERSION_NUMBER < 0x03060600)
+#if defined(DTLS_USE_CH_REASM_BIO)
         /* Datachannel/DTLS app data must not pay reassembly BIO overhead. */
         mbedtls_ssl_set_bio(&dtls_srtp->ssl, dtls_srtp, dtls_srtp->udp_send, dtls_srtp->udp_recv, NULL);
         dtls_srtp_ch_reasm_free(dtls_srtp);
