@@ -53,6 +53,7 @@ struct class_t {
 
 static esp_webrtc_handle_t webrtc  = NULL;
 static class_t            *classes = NULL;
+static char                last_function_call_id[64] = {0};
 
 static int set_light_on_off(attribute_t *attr)
 {
@@ -254,6 +255,27 @@ static int add_parent_attribute(cJSON *parent, attribute_t *attr)
     return 0;
 }
 
+static int send_datachannel_json(cJSON *root)
+{
+    if (webrtc == NULL || root == NULL) {
+        return -1;
+    }
+    char *json_string = cJSON_PrintUnformatted(root);
+    if (json_string == NULL) {
+        return -1;
+    }
+    printf("Begin to send json:%s\n", json_string);
+    int ret = esp_webrtc_send_custom_data(webrtc, ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL,
+                                          (uint8_t *)json_string, strlen(json_string));
+    free(json_string);
+    return ret;
+}
+
+/*
+ * OpenAI Realtime GA no longer accepts beta fields like session.modalities /
+ * response.modalities. Use session.type=realtime and output_modalities instead.
+ * Docs: https://developers.openai.com/api/docs/guides/realtime-conversations
+ */
 static int send_function_desc(void)
 {
     if (classes == NULL || webrtc == NULL) {
@@ -264,12 +286,18 @@ static int send_function_desc(void)
     cJSON *session = cJSON_CreateObject();
     cJSON_AddItemToObject(root, "session", session);
 
+    cJSON_AddStringToObject(session, "type", "realtime");
     cJSON *modalities = cJSON_CreateArray();
-    cJSON_AddItemToArray(modalities, cJSON_CreateString("text"));
+    /* GA: ["audio"] gives spoken audio + transcript; ["audio","text"] is rejected */
     cJSON_AddItemToArray(modalities, cJSON_CreateString("audio"));
+    cJSON_AddItemToObject(session, "output_modalities", modalities);
+    cJSON_AddStringToObject(session, "instructions",
+                            "You are helpful and have some tools installed. "
+                            "In the tools you have the ability to control a light bulb, "
+                            "change speaker volume and open or close a door. "
+                            "Prefer calling tools when the user asks for those actions.");
+    cJSON_AddStringToObject(session, "tool_choice", "auto");
 
-    cJSON_AddItemToObject(session, "modalities", modalities);
-    cJSON_AddNullToObject(session, "input_audio_transcription");
     cJSON *tools = cJSON_CreateArray();
     cJSON_AddItemToObject(session, "tools", tools);
 
@@ -311,13 +339,9 @@ static int send_function_desc(void)
         }
         iter = iter->next;
     }
-    char *json_string = cJSON_Print(root);
-    if (json_string) {
-        esp_webrtc_send_custom_data(webrtc, ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL, (uint8_t *)json_string, strlen(json_string));
-        free(json_string);
-    }
+    int ret = send_datachannel_json(root);
     cJSON_Delete(root);
-    return 0;
+    return ret;
 }
 
 static int match_and_execute(cJSON *cur, attribute_t *attr)
@@ -354,53 +378,152 @@ static int match_and_execute(cJSON *cur, attribute_t *attr)
     return 1; // Success
 }
 
+static int send_function_call_output(const char *call_id, const char *output_json)
+{
+    if (call_id == NULL || output_json == NULL) {
+        return -1;
+    }
+    cJSON *root = cJSON_CreateObject();
+    cJSON *item = cJSON_CreateObject();
+    if (root == NULL || item == NULL) {
+        cJSON_Delete(root);
+        cJSON_Delete(item);
+        return -1;
+    }
+    cJSON_AddStringToObject(root, "type", "conversation.item.create");
+    cJSON_AddStringToObject(item, "type", "function_call_output");
+    cJSON_AddStringToObject(item, "call_id", call_id);
+    cJSON_AddStringToObject(item, "output", output_json);
+    cJSON_AddItemToObject(root, "item", item);
+    int ret = send_datachannel_json(root);
+    cJSON_Delete(root);
+    if (ret != 0) {
+        return ret;
+    }
+
+    /* Ask the model to continue after receiving tool output */
+    cJSON *resp = cJSON_CreateObject();
+    if (resp == NULL) {
+        return -1;
+    }
+    cJSON_AddStringToObject(resp, "type", "response.create");
+    ret = send_datachannel_json(resp);
+    cJSON_Delete(resp);
+    return ret;
+}
+
+static int execute_function_call(const char *name, const char *arguments, const char *call_id)
+{
+    if (name == NULL || arguments == NULL) {
+        return -1;
+    }
+    /* GA may emit both function_call_arguments.done and response.done for one call */
+    if (call_id && call_id[0] && strcmp(last_function_call_id, call_id) == 0) {
+        return 0;
+    }
+    if (call_id && call_id[0]) {
+        strncpy(last_function_call_id, call_id, sizeof(last_function_call_id) - 1);
+        last_function_call_id[sizeof(last_function_call_id) - 1] = 0;
+    }
+    printf("Function Call name=%s call_id=%s args=%s\n",
+           name, call_id ? call_id : "(none)", arguments);
+
+    cJSON *args_root = cJSON_Parse(arguments);
+    if (!args_root) {
+        printf("Error parsing arguments JSON\n");
+        if (call_id) {
+            send_function_call_output(call_id, "{\"ok\":false,\"error\":\"invalid arguments\"}");
+        }
+        return -1;
+    }
+
+    bool matched = false;
+    class_t *iter = classes;
+    while (iter) {
+        if (strcmp(iter->name, name) == 0) {
+            matched = true;
+            for (int i = 0; i < iter->attr_num; i++) {
+                attribute_t *attr = &iter->attr_list[i];
+                match_and_execute(args_root, attr);
+            }
+            break;
+        }
+        iter = iter->next;
+    }
+    cJSON_Delete(args_root);
+
+    if (call_id) {
+        send_function_call_output(call_id, matched ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"unknown function\"}");
+    }
+    return matched ? 0 : -1;
+}
+
 static int process_json(const char *json_data)
 {
     cJSON *root = cJSON_Parse(json_data);
     if (!root) {
         printf("Error parsing JSON data\n");
-        return -1; // Parsing error
+        return -1;
     }
 
     const cJSON *type = cJSON_GetObjectItemCaseSensitive(root, "type");
-    if (!cJSON_IsString(type) || strcmp(type->valuestring, "response.function_call_arguments.done") != 0) {
+    if (!cJSON_IsString(type) || type->valuestring == NULL) {
         cJSON_Delete(root);
         return 0;
     }
-    char *payload = cJSON_PrintUnformatted(root);
-    if (payload) {
-        printf("Function Call %s\n", payload);
+
+    if (strcmp(type->valuestring, "error") == 0 ||
+        strcmp(type->valuestring, "invalid_request_error") == 0) {
+        char *payload = cJSON_PrintUnformatted(root);
+        ESP_LOGE(TAG, "Realtime error: %s", payload ? payload : "(null)");
         free(payload);
-    }
-
-    const cJSON *name = cJSON_GetObjectItemCaseSensitive(root, "name");
-    const cJSON *arguments = cJSON_GetObjectItemCaseSensitive(root, "arguments");
-    if (!cJSON_IsString(name) || !name->valuestring || !cJSON_IsString(arguments) || !arguments->valuestring) {
-        printf("Invalid JSON format\n");
         cJSON_Delete(root);
-        return -1; // Invalid format
+        return -1;
     }
 
-    cJSON *args_root = cJSON_Parse(arguments->valuestring);
-    if (!args_root) {
-        printf("Error parsing arguments JSON\n");
+    if (strcmp(type->valuestring, "session.updated") == 0) {
+        ESP_LOGI(TAG, "Realtime session.updated (tools/config applied)");
         cJSON_Delete(root);
-        return -1; // Parsing error
+        return 0;
     }
 
-    // Find the corresponding class and attributes
-    class_t *iter = classes;
-    while (iter) {
-        if (strcmp(iter->name, name->valuestring) == 0) {
-            for (int i = 0; i < iter->attr_num; i++) {
-                attribute_t *attr = &iter->attr_list[i];
-                match_and_execute(args_root, attr);
+    /* Beta/GA streaming completion event */
+    if (strcmp(type->valuestring, "response.function_call_arguments.done") == 0) {
+        const cJSON *name = cJSON_GetObjectItemCaseSensitive(root, "name");
+        const cJSON *arguments = cJSON_GetObjectItemCaseSensitive(root, "arguments");
+        const cJSON *call_id = cJSON_GetObjectItemCaseSensitive(root, "call_id");
+        if (cJSON_IsString(name) && cJSON_IsString(arguments)) {
+            execute_function_call(name->valuestring, arguments->valuestring,
+                                  cJSON_IsString(call_id) ? call_id->valuestring : NULL);
+        }
+        cJSON_Delete(root);
+        return 0;
+    }
+
+    /* GA also embeds completed function calls in response.done */
+    if (strcmp(type->valuestring, "response.done") == 0) {
+        const cJSON *response = cJSON_GetObjectItemCaseSensitive(root, "response");
+        const cJSON *output = response ? cJSON_GetObjectItemCaseSensitive(response, "output") : NULL;
+        if (cJSON_IsArray(output)) {
+            cJSON *item = NULL;
+            cJSON_ArrayForEach(item, output) {
+                const cJSON *item_type = cJSON_GetObjectItemCaseSensitive(item, "type");
+                if (!cJSON_IsString(item_type) || strcmp(item_type->valuestring, "function_call") != 0) {
+                    continue;
+                }
+                const cJSON *name = cJSON_GetObjectItemCaseSensitive(item, "name");
+                const cJSON *arguments = cJSON_GetObjectItemCaseSensitive(item, "arguments");
+                const cJSON *call_id = cJSON_GetObjectItemCaseSensitive(item, "call_id");
+                if (cJSON_IsString(name) && cJSON_IsString(arguments)) {
+                    execute_function_call(name->valuestring, arguments->valuestring,
+                                          cJSON_IsString(call_id) ? call_id->valuestring : NULL);
+                }
             }
         }
-        iter = iter->next;
+        cJSON_Delete(root);
+        return 0;
     }
 
-    cJSON_Delete(args_root);
     cJSON_Delete(root);
     return 0;
 }
@@ -438,26 +561,22 @@ static int send_response(char *text)
         return -1;
     }
     cJSON *root = cJSON_CreateObject();
-    if (root) {
-        cJSON_AddStringToObject(root, "type", "response.create");
-        cJSON *response = cJSON_CreateObject();
-        cJSON *modalities = cJSON_CreateArray();
-        cJSON_AddItemToArray(modalities, cJSON_CreateString("text"));
-        cJSON_AddItemToArray(modalities, cJSON_CreateString("audio"));
-        cJSON_AddItemToObject(response, "modalities", modalities);
-        cJSON_AddStringToObject(response, "instructions", text);
-        cJSON_AddItemToObject(root, "response", response);
+    cJSON *response = cJSON_CreateObject();
+    cJSON *modalities = cJSON_CreateArray();
+    if (root == NULL || response == NULL || modalities == NULL) {
+        cJSON_Delete(root);
+        cJSON_Delete(response);
+        cJSON_Delete(modalities);
+        return -1;
     }
-    // Print the initial JSON structure
-    char *send_text = cJSON_Print(root);
-    if (send_text) {
-        printf("Begin to send json:%s\n", send_text);
-        esp_webrtc_send_custom_data(webrtc, ESP_WEBRTC_CUSTOM_DATA_VIA_DATA_CHANNEL, (uint8_t *)send_text, strlen(send_text));
-        // Clean up
-        free(send_text);
-    }
-    cJSON_Delete(root); // Free the cJSON object
-    return 0;
+    cJSON_AddStringToObject(root, "type", "response.create");
+    cJSON_AddItemToArray(modalities, cJSON_CreateString("audio"));
+    cJSON_AddItemToObject(response, "output_modalities", modalities);
+    cJSON_AddStringToObject(response, "instructions", text);
+    cJSON_AddItemToObject(root, "response", response);
+    int ret = send_datachannel_json(root);
+    cJSON_Delete(root);
+    return ret;
 }
 
 static int webrtc_event_handler(esp_webrtc_event_t *event, void *ctx)
@@ -465,17 +584,18 @@ static int webrtc_event_handler(esp_webrtc_event_t *event, void *ctx)
     printf("====================Event %d======================\n", event->type);
     if (event->type == ESP_WEBRTC_EVENT_DATA_CHANNEL_CONNECTED) {
         // As ESP32 act as SCTP server, it does not create data channel automatically
-        // Here manually create one data channel
+        // Here manually create one data channel (OpenAI samples use label "oai-events")
         esp_peer_data_channel_cfg_t cfg = {
-            .label = "esp_channel",
+            .label = "oai-events",
         };
         esp_peer_handle_t peer_handle = NULL;
         esp_webrtc_get_peer_connection(webrtc, &peer_handle);
         esp_peer_create_data_channel(peer_handle, &cfg);
     }
     if (event->type == ESP_WEBRTC_EVENT_DATA_CHANNEL_OPENED) {
-        send_response("You are helpful and have some tools installed. In the tools you have the ability to control a light bulb and change speaker volume. Say 'How can I help?");
+        /* Register tools first, then ask for the greeting response */
         send_function_desc();
+        send_response("Greet the user briefly and say: How can I help?");
     }
     return 0;
 }
