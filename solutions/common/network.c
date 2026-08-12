@@ -238,7 +238,7 @@ int network_init(const char *ssid, const char *password, network_connect_cb cb)
 {
     // Initialize Ethernet driver
     uint8_t eth_port_cnt = 0;
-    ESP_ERROR_CHECK(example_eth_init(&eth_handles, &eth_port_cnt));
+    ESP_ERROR_CHECK(ethernet_init_all(&eth_handles, &eth_port_cnt));
 
     // Initialize TCP/IP network interface aka the esp-netif (should be called only once in application)
     ESP_ERROR_CHECK(esp_netif_init());

@@ -55,7 +55,11 @@ extern "C" {
  *        When enable `NETWORK_USE_ETHERNET` will cause socket error
  *        User must replace it to a unused GPIO instead (like GPIO27)
  */
+#ifndef CONFIG_NETWORK_USE_ETHERNET
 #define DOOR_BELL_RING_BUTTON  35
+#else
+#define DOOR_BELL_RING_BUTTON  27
+#endif
 
 #elif CONFIG_IDF_TARGET_ESP32S31
 /**
