@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 #include <sys/param.h>
@@ -35,8 +36,14 @@
 #include "esp_codec_dev.h"
 #include "esp_webrtc_defaults.h"
 #include "esp_capture_sink.h"
+#include "esp_capture_advance.h"
 
 #define AUDIO_FRAME_INTERVAL (20)
+#define VIDEO_DC_CHUNK_HDR_SIZE  (5)
+#define VIDEO_DC_CHUNK_END       (1 << 7)
+#define VIDEO_DC_CHUNK_SEQ_MASK  (0x7F)
+#define VIDEO_DC_DEFAULT_CHUNK   (10000)
+#define VIDEO_DC_REASM_MAX       (512 * 1024)
 #define STR_SAME(a, b)       (strncmp(a, b, sizeof(b) - 1) == 0)
 #define GOTO_LABEL_ON_NULL(label, ptr, code) if (ptr == NULL) {   \
     ret = code;                                                   \
@@ -95,9 +102,19 @@ typedef struct {
     bool                          signaling_connected;
     bool                          no_auto_capture;
     webrtc_pre_setting_t          pre_setting;
+    uint8_t                       last_gop;
 
     uint8_t *aud_fifo;
     uint32_t aud_fifo_size;
+    // Video-over-DC chunk reassembly
+    uint8_t *vid_dc_reasm;
+    uint32_t vid_dc_reasm_size;
+    uint32_t vid_dc_reasm_cap;
+    uint8_t  vid_dc_reasm_next_seq;
+    bool     vid_dc_reasm_active;
+    // Reusable video-over-DC send chunk; avoids malloc/free for every JPEG.
+    uint8_t *vid_dc_send_buf;
+    uint32_t vid_dc_send_buf_cap;
     // For debug only
     uint32_t vid_send_pts;
     uint32_t aud_send_pts;
@@ -115,6 +132,181 @@ typedef struct {
 static const char *TAG = "webrtc";
 
 bool webrtc_tracing = false;
+
+static void convert_dec_vid_info(esp_peer_video_stream_info_t *info, av_render_video_info_t *dec_info);
+
+static uint16_t get_video_dc_chunk_size(webrtc_t *rtc)
+{
+    uint16_t chunk = rtc->rtc_cfg.peer_cfg.video_dc_chunk_size;
+    return chunk ? chunk : VIDEO_DC_DEFAULT_CHUNK;
+}
+
+static void reset_video_dc_reasm(webrtc_t *rtc)
+{
+    rtc->vid_dc_reasm_size = 0;
+    rtc->vid_dc_reasm_next_seq = 0;
+    rtc->vid_dc_reasm_active = false;
+}
+
+static int send_video_over_data_channel(webrtc_t *rtc, uint8_t *data, int size)
+{
+    if (rtc->rtc_cfg.peer_cfg.video_dc_chunked == false) {
+        esp_peer_data_frame_t data_frame = {
+            .type = ESP_PEER_DATA_CHANNEL_DATA,
+            .data = data,
+            .size = size,
+        };
+        return esp_peer_send_data(rtc->pc, &data_frame);
+    }
+
+    uint16_t chunk_size = get_video_dc_chunk_size(rtc);
+    uint32_t chunk_count = ((uint32_t)size + chunk_size - 1) / chunk_size;
+    if (chunk_count > VIDEO_DC_CHUNK_SEQ_MASK + 1) {
+        ESP_LOGW(TAG, "Drop DC frame requiring %u chunks (7-bit sequence max 128)",
+                 (unsigned)chunk_count);
+        return ESP_PEER_ERR_INVALID_ARG;
+    }
+    uint32_t send_buf_need = VIDEO_DC_CHUNK_HDR_SIZE + chunk_size;
+    if (rtc->vid_dc_send_buf_cap < send_buf_need) {
+        uint8_t *buf = realloc(rtc->vid_dc_send_buf, send_buf_need);
+        if (buf == NULL) {
+            return ESP_PEER_ERR_NO_MEM;
+        }
+        rtc->vid_dc_send_buf = buf;
+        rtc->vid_dc_send_buf_cap = send_buf_need;
+    }
+    uint8_t *hdr_buf = rtc->vid_dc_send_buf;
+    if (hdr_buf == NULL) {
+        return ESP_PEER_ERR_NO_MEM;
+    }
+
+    int offset = 0;
+    int ret = ESP_PEER_ERR_NONE;
+    uint8_t seq = 0;
+    while (offset < size) {
+        int payload = size - offset;
+        if (payload > chunk_size) {
+            payload = chunk_size;
+        }
+        uint8_t chunk_id = seq;
+        if (offset + payload >= size) {
+            chunk_id |= VIDEO_DC_CHUNK_END;
+        }
+        hdr_buf[0] = chunk_id;
+        hdr_buf[1] = (payload >> 24) & 0xFF;
+        hdr_buf[2] = (payload >> 16) & 0xFF;
+        hdr_buf[3] = (payload >> 8) & 0xFF;
+        hdr_buf[4] = payload & 0xFF;
+        memcpy(hdr_buf + VIDEO_DC_CHUNK_HDR_SIZE, data + offset, payload);
+
+        esp_peer_data_frame_t data_frame = {
+            .type = ESP_PEER_DATA_CHANNEL_DATA,
+            .data = hdr_buf,
+            .size = VIDEO_DC_CHUNK_HDR_SIZE + payload,
+        };
+        ret = esp_peer_send_data(rtc->pc, &data_frame);
+        if (ret != ESP_PEER_ERR_NONE) {
+            break;
+        }
+        offset += payload;
+        seq++;
+    }
+    return ret;
+}
+
+static int feed_video_dc_frame(webrtc_t *rtc, uint8_t *data, int size)
+{
+    rtc->vid_recv_num++;
+    rtc->vid_recv_size += size;
+    if (rtc->play_handle == NULL) {
+        return 0;
+    }
+    if (rtc->recv_vid_info.codec == ESP_PEER_VIDEO_CODEC_NONE) {
+        /* Prefer peer_cfg dims as a hint; actual size still comes from JPEG header. */
+        rtc->recv_vid_info = rtc->rtc_cfg.peer_cfg.video_info;
+        if (rtc->recv_vid_info.codec == ESP_PEER_VIDEO_CODEC_NONE) {
+            rtc->recv_vid_info.codec = ESP_PEER_VIDEO_CODEC_MJPEG;
+        }
+        av_render_video_info_t video_info = {};
+        convert_dec_vid_info(&rtc->recv_vid_info, &video_info);
+        av_render_add_video_stream(rtc->play_handle, &video_info);
+    }
+    av_render_video_data_t video_data = {
+        .data = data,
+        .size = size,
+    };
+    return av_render_add_video_data(rtc->play_handle, &video_data);
+}
+
+static int handle_chunked_video_dc(webrtc_t *rtc, uint8_t *data, int size)
+{
+    if (size < VIDEO_DC_CHUNK_HDR_SIZE) {
+        ESP_LOGW(TAG, "Drop short video DC chunk %d", size);
+        return 0;
+    }
+    uint8_t chunk_id = data[0];
+    uint8_t seq = chunk_id & VIDEO_DC_CHUNK_SEQ_MASK;
+    bool is_end = (chunk_id & VIDEO_DC_CHUNK_END) != 0;
+    uint32_t payload_len = ((uint32_t)data[1] << 24) | ((uint32_t)data[2] << 16) |
+                           ((uint32_t)data[3] << 8) | data[4];
+    if (payload_len + VIDEO_DC_CHUNK_HDR_SIZE != (uint32_t)size) {
+        ESP_LOGW(TAG, "Drop bad video DC chunk len %u size %d", (unsigned)payload_len, size);
+        reset_video_dc_reasm(rtc);
+        return 0;
+    }
+    uint8_t *payload = data + VIDEO_DC_CHUNK_HDR_SIZE;
+
+    /* Completeness is only seq continuity: seq0=BOS, then 1..N continuous, END bit finishes. */
+    if (seq == 0) {
+        reset_video_dc_reasm(rtc);
+        rtc->vid_dc_reasm_active = true;
+        rtc->vid_dc_reasm_next_seq = 1;
+    } else if (rtc->vid_dc_reasm_active == false) {
+        ESP_LOGW(TAG, "Drop video DC chunk seq %u without BOS", seq);
+        return 0;
+    } else if (seq != rtc->vid_dc_reasm_next_seq) {
+        ESP_LOGW(TAG, "Drop incomplete video DC frame: expected seq %u got %u",
+                 rtc->vid_dc_reasm_next_seq, seq);
+        reset_video_dc_reasm(rtc);
+        return 0;
+    } else {
+        rtc->vid_dc_reasm_next_seq++;
+    }
+
+    uint32_t need = rtc->vid_dc_reasm_size + payload_len;
+    if (need > VIDEO_DC_REASM_MAX) {
+        ESP_LOGW(TAG, "Drop oversized reassembled frame %u", (unsigned)need);
+        reset_video_dc_reasm(rtc);
+        return 0;
+    }
+    if (need > rtc->vid_dc_reasm_cap) {
+        uint32_t new_cap = rtc->vid_dc_reasm_cap ? rtc->vid_dc_reasm_cap * 2 : VIDEO_DC_DEFAULT_CHUNK * 2;
+        while (new_cap < need) {
+            new_cap *= 2;
+        }
+        if (new_cap > VIDEO_DC_REASM_MAX) {
+            new_cap = VIDEO_DC_REASM_MAX;
+        }
+        uint8_t *buf = realloc(rtc->vid_dc_reasm, new_cap);
+        if (buf == NULL) {
+            reset_video_dc_reasm(rtc);
+            SAFE_FREE(rtc->vid_dc_reasm);
+            rtc->vid_dc_reasm_cap = 0;
+            return ESP_PEER_ERR_NO_MEM;
+        }
+        rtc->vid_dc_reasm = buf;
+        rtc->vid_dc_reasm_cap = new_cap;
+    }
+    memcpy(rtc->vid_dc_reasm + rtc->vid_dc_reasm_size, payload, payload_len);
+    rtc->vid_dc_reasm_size += payload_len;
+
+    if (is_end) {
+        /* Continuous seq from 0..E is enough to treat the frame as complete. */
+        feed_video_dc_frame(rtc, rtc->vid_dc_reasm, (int)rtc->vid_dc_reasm_size);
+        reset_video_dc_reasm(rtc);
+    }
+    return 0;
+}
 
 static void _media_send(void *ctx)
 {
@@ -147,12 +339,7 @@ static void _media_send(void *ctx)
         int ret = esp_capture_sink_acquire_frame(rtc->capture_path, &video_frame, true);
         if (ret == ESP_CAPTURE_ERR_OK) {
             if (rtc->rtc_cfg.peer_cfg.enable_data_channel && rtc->rtc_cfg.peer_cfg.video_over_data_channel) {
-                esp_peer_data_frame_t data_frame = {
-                    .type = ESP_PEER_DATA_CHANNEL_DATA,
-                    .data = video_frame.data,
-                    .size = video_frame.size,
-                };
-                esp_peer_send_data(rtc->pc, &data_frame);
+                send_video_over_data_channel(rtc, video_frame.data, video_frame.size);
             } else {
                 esp_peer_video_frame_t video_send_frame = {
                     .pts = video_frame.pts,
@@ -237,14 +424,15 @@ static void pc_notify_app(webrtc_t *rtc, esp_webrtc_event_type_t event_type)
     }
 }
 
+esp_gmf_err_t esp_gmf_video_enc_set_gop(esp_gmf_element_handle_t handle, uint32_t gop);
+
 static int pc_on_state(esp_peer_state_t state, void *ctx)
 {
     webrtc_t *rtc = (webrtc_t *)ctx;
     ESP_LOGI(TAG, "PeerConnectionState: %d", state);
-    if (state != ESP_PEER_STATE_DATA_CHANNEL_OPENED &&
-        state != ESP_PEER_STATE_DATA_CHANNEL_CLOSED &&
-        state != ESP_PEER_STATE_DATA_CHANNEL_CONNECTED &&
-        state != ESP_PEER_STATE_DATA_CHANNEL_DISCONNECTED) {
+    if (state == ESP_PEER_STATE_CONNECTED ||
+        state == ESP_PEER_STATE_DISCONNECTED ||
+        state == ESP_PEER_STATE_CONNECT_FAILED) {
         rtc->peer_state = state;
     }
     if (state == ESP_PEER_STATE_CANDIDATE_GATHERING) {
@@ -268,6 +456,16 @@ static int pc_on_state(esp_peer_state_t state, void *ctx)
         pc_notify_app(rtc, ESP_WEBRTC_EVENT_DATA_CHANNEL_OPENED);
     } else if (state == ESP_PEER_STATE_DATA_CHANNEL_CLOSED) {
         pc_notify_app(rtc, ESP_WEBRTC_EVENT_DATA_CHANNEL_CLOSED);
+    } else if (state == ESP_PEER_STATE_VIDEO_PLI_RECEIVED) {
+        // Workaround to toggle GOP, will replace set force IDR later
+        uint8_t default_gop = rtc->rtc_cfg.peer_cfg.video_info.fps * 2;
+        esp_gmf_element_handle_t vid_enc = NULL;
+        esp_capture_sink_get_element_by_tag(rtc->capture_path, ESP_CAPTURE_STREAM_TYPE_VIDEO, "vid_enc", &vid_enc);
+        if (vid_enc) {
+            uint8_t new_gop = (rtc->last_gop == default_gop) ? default_gop - 1: default_gop;
+            esp_gmf_video_enc_set_gop(vid_enc, new_gop);
+            rtc->last_gop = new_gop;
+        }
     }
     return 0;
 }
@@ -412,21 +610,10 @@ static int pc_on_data(esp_peer_data_frame_t *frame, void *ctx)
         }
         return 0;
     }
-    rtc->vid_recv_num++;
-    rtc->vid_recv_size += frame->size;
-    // Treat received data as video data
-    if (rtc->recv_vid_info.codec == ESP_PEER_VIDEO_CODEC_NONE) {
-        rtc->recv_vid_info.codec = rtc->rtc_cfg.peer_cfg.video_info.codec;
-        av_render_video_info_t video_info = {};
-        convert_dec_vid_info(&rtc->recv_vid_info, &video_info);
-        av_render_add_video_stream(rtc->play_handle, &video_info);
+    if (rtc->rtc_cfg.peer_cfg.video_dc_chunked) {
+        return handle_chunked_video_dc(rtc, frame->data, frame->size);
     }
-    av_render_video_data_t video_data = {
-        .data = frame->data,
-        .size = frame->size,
-    };
-    av_render_add_video_data(rtc->play_handle, &video_data);
-    return 0;
+    return feed_video_dc_frame(rtc, frame->data, frame->size);
 }
 
 static void free_server_cfg(webrtc_t *rtc)
@@ -991,6 +1178,12 @@ int esp_webrtc_stop(esp_webrtc_handle_t handle)
         esp_peer_signaling_stop(rtc->signaling);
         rtc->signaling = NULL;
     }
+    // Release reusable DC buffers at stop; they are allocated lazily on restart.
+    SAFE_FREE(rtc->vid_dc_send_buf);
+    rtc->vid_dc_send_buf_cap = 0;
+    SAFE_FREE(rtc->vid_dc_reasm);
+    rtc->vid_dc_reasm_cap = 0;
+    reset_video_dc_reasm(rtc);
     return ret;
 }
 
@@ -1005,6 +1198,8 @@ int esp_webrtc_close(esp_webrtc_handle_t handle)
     SAFE_FREE(rtc->rtc_cfg.peer_cfg.extra_cfg);
     SAFE_FREE(rtc->rtc_cfg.signaling_cfg.extra_cfg);
     SAFE_FREE(rtc->aud_fifo);
+    SAFE_FREE(rtc->vid_dc_reasm);
+    SAFE_FREE(rtc->vid_dc_send_buf);
     free(rtc);
     return ESP_PEER_ERR_NONE;
 }

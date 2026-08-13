@@ -22,9 +22,10 @@
  *
  */
 
- #pragma once
+#pragma once
 
- #include <stdatomic.h>
+#include <stdatomic.h>
+#include "esp_peer_default.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,6 +34,9 @@ extern "C" {
 void peer_atomic_inc(atomic_int *v);
 int peer_atomic_load(atomic_int *v);
 int peer_atomic_dec(atomic_int *v);
+
+/* Internal: read current DTLS cipher preference for handshake config. */
+esp_peer_dtls_cipher_pref_t peer_get_dtls_cipher_pref(void);
 
 #ifdef __cplusplus
 }

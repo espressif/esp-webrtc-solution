@@ -34,6 +34,7 @@ typedef enum {
     ESP_PEER_STATE_REMOTE_AUDIO_TRACK_REMOVED = 14, /*!< Remote audio track is removed */
     ESP_PEER_STATE_REMOTE_VIDEO_TRACK_ADDED   = 15, /*!< Remote video track is added */
     ESP_PEER_STATE_REMOTE_VIDEO_TRACK_REMOVED = 16, /*!< Remote video track is removed */
+    ESP_PEER_STATE_VIDEO_PLI_RECEIVED         = 17, /*!< Peer requested a video keyframe via RTCP PLI */
 } esp_peer_state_t;
 
 /**

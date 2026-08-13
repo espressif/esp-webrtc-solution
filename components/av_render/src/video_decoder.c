@@ -107,8 +107,19 @@ static int do_decode(vdec_t *vdec, av_render_video_data_t *data, av_render_video
         decoded_frame.data = vdec->out_data;
         decoded_frame.size = vdec->out_size;
         ret = esp_video_dec_process(vdec->dec_handle, &in_frame, &decoded_frame);
+        /*
+         * Probe expects BUF_NOT_ENOUGH so we can realloc to the real frame size.
+         * Some IDF/jpeg stacks return a generic failure instead; still recover if
+         * get_frame_info already learned the resolution from the JPEG header.
+         */
         if (ret != ESP_VC_ERR_BUF_NOT_ENOUGH) {
-            return ESP_MEDIA_ERR_BAD_DATA;
+            esp_video_codec_frame_info_t probe = {};
+            if (esp_video_dec_get_frame_info(vdec->dec_handle, &probe) != ESP_VC_ERR_OK ||
+                probe.res.width == 0 || probe.res.height == 0) {
+                esp_video_codec_free(vdec->out_data);
+                vdec->out_data = NULL;
+                return ESP_MEDIA_ERR_BAD_DATA;
+            }
         }
         esp_video_codec_free(vdec->out_data);
         vdec->out_data = NULL;

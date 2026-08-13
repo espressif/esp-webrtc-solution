@@ -37,6 +37,7 @@ Additionally, the repository contains demo applications under `solutions/` that 
 | [`doorbell_demo`](solutions/doorbell_demo/) | Doorbell with AppRTC-style WebSocket signaling: remote control, live video, two-way audio. |
 | [`doorbell_local`](solutions/doorbell_local/) | Local doorbell without an external signaling server (ESP as signaling); includes real-time pedestrian detection. |
 | [`videocall_demo`](solutions/videocall_demo/) | Video-call style app using `esp_webrtc` **data channel**. |
+| [`local_jpeg_stream`](solutions/local_jpeg_stream/) | Local JPEG-over-data-channel stream to browser (no external signaling); includes UT harness. |
 
 ### Bridges and RTSP
 

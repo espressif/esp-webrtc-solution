@@ -9,7 +9,7 @@
 
 #include "codec_init.h"
 #include "codec_board.h"
-#if CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
 #include "esp_video_init.h"
 #endif
 #include "av_render.h"
@@ -63,10 +63,15 @@ static esp_capture_video_src_if_t *create_video_source(void)
     if (ret != 0) {
         return NULL;
     }
-#if CONFIG_IDF_TARGET_ESP32P4
-    esp_video_init_csi_config_t csi_config = { 0 };
+    esp_capture_video_v4l2_src_cfg_t v4l2_cfg = {
+        .dev_name = "/dev/video0",
+        .buf_count = 2,
+    };
+#if CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
     esp_video_init_dvp_config_t dvp_config = { 0 };
     esp_video_init_config_t cam_config = { 0 };
+#if CONFIG_IDF_TARGET_ESP32P4
+    esp_video_init_csi_config_t csi_config = { 0 };
     if (cam_pin_cfg.type == CAMERA_TYPE_MIPI) {
         csi_config.sccb_config.i2c_handle = get_i2c_bus_handle(0);
         csi_config.sccb_config.freq = 100000;
@@ -74,18 +79,11 @@ static esp_capture_video_src_if_t *create_video_source(void)
         csi_config.pwdn_pin = cam_pin_cfg.pwr;
         ESP_LOGI(TAG, "Use i2c handle %p", csi_config.sccb_config.i2c_handle);
         cam_config.csi = &csi_config;
-        if (cam_pin_cfg.xclk != -1) {
-            esp_cam_sensor_xclk_handle_t xclk_handle = NULL;
-            esp_cam_sensor_xclk_config_t xclk_config = {
-                .esp_clock_router_cfg = {
-                    .xclk_pin = cam_pin_cfg.xclk,
-                    .xclk_freq_hz = 24000000,
-                }
-            };
-            ESP_ERROR_CHECK(esp_cam_sensor_xclk_allocate(ESP_CAM_SENSOR_XCLK_ESP_CLOCK_ROUTER, &xclk_handle));
-            ESP_ERROR_CHECK(esp_cam_sensor_xclk_start(xclk_handle, &xclk_config));
-        }
-    } else if (cam_pin_cfg.type == CAMERA_TYPE_DVP) {
+    } else
+#endif
+    if (cam_pin_cfg.type == CAMERA_TYPE_DVP) {
+        dvp_config.sccb_config.i2c_handle = get_i2c_bus_handle(0);
+        dvp_config.sccb_config.freq = 100000;
         dvp_config.reset_pin = cam_pin_cfg.reset;
         dvp_config.pwdn_pin = cam_pin_cfg.pwr;
         dvp_config.dvp_pin.data_width = CAM_CTLR_DATA_WIDTH_8;
@@ -103,16 +101,13 @@ static esp_capture_video_src_if_t *create_video_source(void)
         dvp_config.dvp_pin.de_io = cam_pin_cfg.de;
         dvp_config.xclk_freq = 20000000;
         cam_config.dvp = &dvp_config;
+        strncpy(v4l2_cfg.dev_name, "/dev/video2", sizeof(v4l2_cfg.dev_name));
     }
     ret = esp_video_init(&cam_config);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Camera init failed with error 0x%x", ret);
         return NULL;
     }
-    esp_capture_video_v4l2_src_cfg_t v4l2_cfg = {
-        .dev_name = "/dev/video0",
-        .buf_count = 3,
-    };
     return esp_capture_new_video_v4l2_src(&v4l2_cfg);
 #endif
 
@@ -145,14 +140,6 @@ static int build_capture_system(void)
 {
     capture_sys.vid_src = create_video_source();
     RET_ON_NULL(capture_sys.vid_src, -1);
-#if CONFIG_IDF_TARGET_ESP32P4
-    capture_sys.vid_src->set_fixed_caps(capture_sys.vid_src, &(esp_capture_video_info_t){
-        .format_id = ESP_CAPTURE_FMT_ID_O_UYY_E_VYY,
-        .width = VIDEO_WIDTH,
-        .height = VIDEO_HEIGHT,
-        .fps = VIDEO_FPS,
-    });
-#endif
 
     esp_capture_audio_dev_src_cfg_t codec_cfg = {
         .record_handle = get_record_handle(),
@@ -180,14 +167,18 @@ static int build_player_system()
         ESP_LOGE(TAG, "Fail to create audio render");
         return -1;
     }
-    lcd_render_cfg_t lcd_cfg = {
+    lcd_render_cfg_t lcd_render_cfg = {
         .lcd_handle = board_get_lcd_handle(),
     };
-    player_sys.video_render = av_render_alloc_lcd_render(&lcd_cfg);
-
+    lcd_cfg_t lcd_cfg = { 0 };
+    get_lcd_cfg(&lcd_cfg);
+    if (lcd_cfg.bus_type == LCD_BUS_TYPE_RGB) {
+        lcd_render_cfg.rgb_panel = true;
+    }
+    player_sys.video_render = av_render_alloc_lcd_render(&lcd_render_cfg);
     if (player_sys.video_render == NULL) {
         ESP_LOGE(TAG, "Fail to create video render");
-        // Allow not display
+        return -1;
     }
     av_render_cfg_t render_cfg = {
         .audio_render = player_sys.audio_render,
@@ -256,7 +247,7 @@ int test_capture_to_player(void)
     av_render_add_video_stream(player_sys.player, &render_vid_info);
     uint32_t start_time = (uint32_t)(esp_timer_get_time() / 1000);
     esp_capture_start(capture_sys.capture_handle);
-    while ((uint32_t)(esp_timer_get_time() / 1000) < start_time + 2000) {
+    while ((uint32_t)(esp_timer_get_time() / 1000) < start_time + 10000) {
         media_lib_thread_sleep(30);
         esp_capture_stream_frame_t frame = {
             .stream_type = ESP_CAPTURE_STREAM_TYPE_AUDIO,

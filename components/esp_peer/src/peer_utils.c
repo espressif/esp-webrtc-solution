@@ -24,6 +24,8 @@
 
 #include "peer_utils.h"
 
+static esp_peer_dtls_cipher_pref_t s_dtls_cipher_pref = ESP_PEER_DTLS_CIPHER_AUTO;
+
 void peer_atomic_inc(atomic_int *v)
 {
     atomic_fetch_add(v, 1);
@@ -37,4 +39,18 @@ int peer_atomic_load(atomic_int *v)
 int peer_atomic_dec(atomic_int *v)
 {
     return atomic_fetch_sub(v, 1);
+}
+
+esp_peer_dtls_cipher_pref_t peer_get_dtls_cipher_pref(void)
+{
+    return s_dtls_cipher_pref;
+}
+
+int esp_peer_set_dtls_cipher_pref(esp_peer_dtls_cipher_pref_t pref)
+{
+    if (pref > ESP_PEER_DTLS_CIPHER_CHACHA) {
+        return -1;
+    }
+    s_dtls_cipher_pref = pref;
+    return 0;
 }

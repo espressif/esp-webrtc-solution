@@ -15,6 +15,7 @@
 #include "dtls_srtp.h"
 #include "esp_random.h"
 #include "esp_log.h"
+#include "peer_utils.h"
 
 #pragma once
 
@@ -58,6 +59,44 @@ static void dtls_srtp_conf_force_dtls12(mbedtls_ssl_config *conf)
     mbedtls_ssl_conf_transport(conf, MBEDTLS_SSL_TRANSPORT_DATAGRAM);
     mbedtls_ssl_conf_min_tls_version(conf, MBEDTLS_SSL_VERSION_TLS1_2);
     mbedtls_ssl_conf_max_tls_version(conf, MBEDTLS_SSL_VERSION_TLS1_2);
+}
+
+/* Values match esp_peer_dtls_cipher_pref_t in esp_peer_default.h */
+/*
+ * Apply A/B cipher preference. Lists must be static: mbedTLS keeps the pointer.
+ * AUTO keeps mbedTLS default order after config_defaults().
+ */
+static void dtls_srtp_conf_cipher_pref(mbedtls_ssl_config *conf)
+{
+    static const int aes_gcm_only[] = {
+        MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+        MBEDTLS_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+        0,
+    };
+/* Prefer sdkconfig flag: MBEDTLS_CHACHAPOLY_C is internal in Mbed TLS 4 / TF-PSA. */
+#if defined(CONFIG_MBEDTLS_CHACHAPOLY_C) || defined(MBEDTLS_CHACHAPOLY_C)
+    static const int chacha_first[] = {
+        MBEDTLS_TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+        MBEDTLS_TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+        MBEDTLS_TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+        MBEDTLS_TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+        0,
+    };
+#endif
+    esp_peer_dtls_cipher_pref_t pref = peer_get_dtls_cipher_pref();
+    if (pref == ESP_PEER_DTLS_CIPHER_AES_GCM) {
+        mbedtls_ssl_conf_ciphersuites(conf, aes_gcm_only);
+        ESP_LOGI(TAG, "DTLS cipher pref: AES-GCM only (A/B)");
+    } else if (pref == ESP_PEER_DTLS_CIPHER_CHACHA) {
+#if defined(CONFIG_MBEDTLS_CHACHAPOLY_C) || defined(MBEDTLS_CHACHAPOLY_C)
+        mbedtls_ssl_conf_ciphersuites(conf, chacha_first);
+        ESP_LOGI(TAG, "DTLS cipher pref: ChaCha20-Poly1305 first (A/B)");
+#else
+        ESP_LOGW(TAG, "DTLS cipher pref: ChaCha requested but not compiled in");
+#endif
+    } else {
+        ESP_LOGI(TAG, "DTLS cipher pref: auto (mbedtls default order)");
+    }
 }
 
 static void dtls_srtp_x509_digest(const mbedtls_x509_crt *crt, char *buf)
@@ -602,6 +641,10 @@ int dtls_srtp_handshake(dtls_srtp_t *dtls_srtp)
     }
     if (ret == 0) {
         ESP_LOGI(TAG, "%s handshake success", dtls_srtp->role == DTLS_SRTP_ROLE_SERVER ? "Server" : "Client");
+        {
+            const char *cs = mbedtls_ssl_get_ciphersuite(&dtls_srtp->ssl);
+            ESP_LOGI(TAG, "Negotiated DTLS ciphersuite: %s", cs ? cs : "(null)");
+        }
 #if defined(DTLS_USE_CH_REASM_BIO)
         /* Datachannel/DTLS app data must not pay reassembly BIO overhead. */
         mbedtls_ssl_set_bio(&dtls_srtp->ssl, dtls_srtp, dtls_srtp->udp_send, dtls_srtp->udp_recv, NULL);
