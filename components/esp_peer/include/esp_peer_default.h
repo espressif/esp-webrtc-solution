@@ -92,6 +92,26 @@ typedef struct {
  */
 const esp_peer_ops_t *esp_peer_get_default_impl(void);
 
+/**
+ * @brief  Prefer DTLS cipher
+ *         Takes effect on the next DTLS handshake (stop/reconnect after changing).
+ *         AUTO uses mbedTLS default order (ChaCha before AES-GCM when both enabled).
+ */
+typedef enum {
+    ESP_PEER_DTLS_CIPHER_AUTO    = 0,  /*!< mbedTLS default preference list */
+    ESP_PEER_DTLS_CIPHER_AES_GCM = 1,  /*!< Force AES-128-GCM only */
+    ESP_PEER_DTLS_CIPHER_CHACHA  = 2,  /*!< Prefer ChaCha20-Poly1305, AES-GCM fallback */
+} esp_peer_dtls_cipher_pref_t;
+
+/**
+ * @brief  Set DTLS cipher preference for the next handshake
+ *
+ * @return 
+ *       - 0  On success
+ *       - -1 If pref is invalid
+ */
+int esp_peer_set_dtls_cipher_pref(esp_peer_dtls_cipher_pref_t pref);
+
 #ifdef __cplusplus
 }
 #endif

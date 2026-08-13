@@ -179,6 +179,7 @@ dtls_srtp_t *dtls_srtp_init(dtls_srtp_cfg_t *cfg)
         BREAK_ON_FAIL(ret);
 
         dtls_srtp_conf_force_dtls12(&dtls_srtp->conf);
+        dtls_srtp_conf_cipher_pref(&dtls_srtp->conf);
         mbedtls_ssl_conf_ca_chain(&dtls_srtp->conf, &dtls_srtp->cert, NULL);
         ret = mbedtls_ssl_conf_own_cert(&dtls_srtp->conf, &dtls_srtp->cert, &dtls_srtp->pkey);
         BREAK_ON_FAIL(ret);
@@ -259,6 +260,7 @@ void dtls_srtp_reset_session(dtls_srtp_t *dtls_srtp, dtls_srtp_role_t role)
             mbedtls_ssl_config_defaults(&dtls_srtp->conf, MBEDTLS_SSL_IS_SERVER, MBEDTLS_SSL_TRANSPORT_DATAGRAM,
                                         MBEDTLS_SSL_PRESET_DEFAULT);
             dtls_srtp_conf_force_dtls12(&dtls_srtp->conf);
+            dtls_srtp_conf_cipher_pref(&dtls_srtp->conf);
 
             mbedtls_ssl_cookie_init(&dtls_srtp->cookie_ctx);
             mbedtls_ssl_cookie_setup(&dtls_srtp->cookie_ctx, mbedtls_ctr_drbg_random, &dtls_srtp->ctr_drbg);
@@ -268,6 +270,7 @@ void dtls_srtp_reset_session(dtls_srtp_t *dtls_srtp, dtls_srtp_role_t role)
             mbedtls_ssl_config_defaults(&dtls_srtp->conf, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_DATAGRAM,
                                         MBEDTLS_SSL_PRESET_DEFAULT);
             dtls_srtp_conf_force_dtls12(&dtls_srtp->conf);
+            dtls_srtp_conf_cipher_pref(&dtls_srtp->conf);
             mbedtls_ssl_conf_authmode(&dtls_srtp->conf, MBEDTLS_SSL_VERIFY_OPTIONAL);
         }
         mbedtls_ssl_conf_ca_chain(&dtls_srtp->conf, &dtls_srtp->cert, NULL);

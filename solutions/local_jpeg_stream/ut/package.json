@@ -1,0 +1,8 @@
+{
+  "name": "local-jpeg-stream-ut",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "puppeteer": "^23.11.1"
+  }
+}

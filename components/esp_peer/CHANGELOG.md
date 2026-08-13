@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.5.4
+
+### Features
+
+- Added "PLI" RTCP message handler and callback
+- Remove debug abort in sctp
+
 ## v1.5.3
 
 - Fixed IDF v6 / mbedTLS 4.1 first-boot DTLS handshake fail (`-0x6e00`): use ClientHello

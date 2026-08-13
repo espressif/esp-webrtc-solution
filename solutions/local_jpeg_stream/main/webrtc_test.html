@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 Local JPEG Stream</title>
+    <link rel="icon" href="data:,">
+    <style>
+        body { font-family: sans-serif; background: #222; color: #eee; display: flex; flex-direction: column; align-items: center; }
+        .container { width: 90%; max-width: 1400px; margin-top: 20px; }
+        .video-box { display: flex; gap: 10px; justify-content: center; margin-bottom: 10px; flex-wrap: wrap; }
+        video, img { width: 640px; height: 480px; background: #000; border: 2px solid #444; object-fit: contain; }
+        .controls { background: #333; padding: 20px; border-radius: 8px; margin-bottom: 10px; }
+        .log { background: #000; color: #0f0; padding: 10px; height: 150px; overflow-y: auto; font-family: monospace; font-size: 12px; width: 100%; border: 1px solid #444; box-sizing: border-box; }
+        input, button, select { padding: 8px; margin: 5px; }
+        select { background: #444; color: white; border: 1px solid #666; border-radius: 4px; }
+        button { cursor: pointer; background: #444; color: white; border: none; border-radius: 4px; }
+        button:hover { background: #666; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        button.active { background: #28a745; }
+        button.ringing { background: #dc3545; animation: blink 1s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .status { margin: 10px; font-weight: bold; }
+        label { margin-right: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Local JPEG Stream (MJPEG via DataChannel)</h2>
+
+        <div class="controls">
+            <button id="btnConnect">1. Connect Signaling</button>
+            <button id="btnAccept" disabled>2. Accept Call</button>
+            <button id="btnRing" disabled>Ring ESP</button>
+            <button id="btnHangup" disabled>Hangup</button>
+            <div style="margin-top: 10px;">
+                <label><input type="checkbox" id="chkSendVideo"> Send Video to ESP (JPEG over DC)</label>
+                <label><input type="checkbox" id="chkSendAudio" checked> Send Audio (RTP)</label>
+                <label>Send resolution
+                    <select id="selSendRes">
+                        <option value="320x240">320x240</option>
+                        <option value="480x360">480x360</option>
+                        <option value="640x480" selected>640x480</option>
+                        <option value="800x600">800x600</option>
+                        <option value="1280x720">1280x720</option>
+                    </select>
+                </label>
+                <label>Send FPS
+                    <select id="selSendFps">
+                        <option value="5">5</option>
+                        <option value="10" selected>10</option>
+                        <option value="15">15</option>
+                        <option value="20">20</option>
+                        <option value="25">25</option>
+                        <option value="30">30</option>
+                    </select>
+                </label>
+                <label>JPEG quality
+                    <select id="selJpegQuality">
+                        <option value="0.3">30%</option>
+                        <option value="0.4" selected>40%</option>
+                        <option value="0.5">50%</option>
+                        <option value="0.6">60%</option>
+                        <option value="0.7">70%</option>
+                        <option value="0.8">80%</option>
+                        <option value="0.9">90%</option>
+                    </select>
+                </label>
+            </div>
+            <div class="status">Status: <span id="txtStatus">Idle</span> | Frames: <span id="txtFrames">0</span></div>
+        </div>
+
+        <div class="video-box">
+            <div>
+                <label>Local (Camera)</label><br>
+                <video id="localVideo" autoplay muted playsinline></video>
+                <canvas id="sendCanvas" style="display:none;" width="640" height="480"></canvas>
+            </div>
+            <div>
+                <label>Remote (DataChannel JPEG)</label><br>
+                <img id="remoteImage" alt="remote jpeg" />
+            </div>
+        </div>
+
+        <div class="log" id="logBox"></div>
+    </div>
+
+    <script>
+        // Chunk header byte0: bit7=E(end), bits0-6=seq; seq0 means BOS/start
+        const CHUNK_END = 1 << 7;
+        const CHUNK_SEQ_MASK = 0x7f;
+        const CHUNK_HDR = 5;
+        const CHUNK_SIZE = 10000;
+
+        const btnConnect = document.getElementById('btnConnect');
+        const btnAccept = document.getElementById('btnAccept');
+        const btnRing = document.getElementById('btnRing');
+        const btnHangup = document.getElementById('btnHangup');
+        const chkSendVideo = document.getElementById('chkSendVideo');
+        const chkSendAudio = document.getElementById('chkSendAudio');
+        const selSendRes = document.getElementById('selSendRes');
+        const selSendFps = document.getElementById('selSendFps');
+        const selJpegQuality = document.getElementById('selJpegQuality');
+        const logBox = document.getElementById('logBox');
+        const txtStatus = document.getElementById('txtStatus');
+        const txtFrames = document.getElementById('txtFrames');
+        const localVideo = document.getElementById('localVideo');
+        const remoteImage = document.getElementById('remoteImage');
+        const sendCanvas = document.getElementById('sendCanvas');
+        const ctx = sendCanvas.getContext('2d');
+
+        function getSendResolution() {
+            const raw = (selSendRes && selSendRes.value) || '640x480';
+            const parts = raw.split('x');
+            let w = parseInt(parts[0], 10) || 640;
+            let h = parseInt(parts[1], 10) || 480;
+            // Clamp to supported range (min 320x240)
+            if (w < 320) w = 320;
+            if (h < 240) h = 240;
+            return { width: w, height: h };
+        }
+
+        function getSendFps() {
+            return Math.max(1, Math.min(60, parseInt(selSendFps.value, 10) || 10));
+        }
+
+        function getJpegQuality() {
+            return Math.max(0.1, Math.min(1.0, parseFloat(selJpegQuality.value) || 0.4));
+        }
+
+        let eventSource = null;
+        let pc = null;
+        let dataChannel = null;
+        let localStream = null;
+        let callState = 'NONE';
+        let remoteCandidatesQueue = [];
+        let frameCount = 0;
+        let sendLoopTimer = null;
+        let reasm = null;
+        let reasmActive = false;
+        let reasmNextSeq = 0;
+        let sendChunkBuf = null; // reusable send buffer (avoid alloc every chunk)
+        window.__jpeg_frames = 0;
+        window.__jpeg_dc_open = false;
+        window.__jpeg_ice = 'new';
+
+        const signalingUrl = '/webrtc/signal';
+        const signalingPostUrl = '/webrtc/signal/post';
+
+        function log(msg) {
+            const div = document.createElement('div');
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logBox.appendChild(div);
+            logBox.scrollTop = logBox.scrollHeight;
+            console.log(msg);
+        }
+
+        function setStatus(s) {
+            txtStatus.textContent = s;
+        }
+
+        function setFrames(n) {
+            frameCount = n;
+            window.__jpeg_frames = n;
+            txtFrames.textContent = String(n);
+        }
+
+        function sendSignalingMessage(message) {
+            fetch(signalingPostUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(message)
+            }).catch(e => console.error('POST failed', e));
+        }
+
+        function sendCustomCommand(cmd) {
+            sendSignalingMessage({ type: 'customized', data: cmd });
+        }
+
+        function resetReasm() {
+            reasm = null;
+            reasmActive = false;
+            reasmNextSeq = 0;
+        }
+
+        function encodeChunkInto(out, chunkId, payload) {
+            out[0] = chunkId;
+            out[1] = (payload.byteLength >> 24) & 0xff;
+            out[2] = (payload.byteLength >> 16) & 0xff;
+            out[3] = (payload.byteLength >> 8) & 0xff;
+            out[4] = payload.byteLength & 0xff;
+            out.set(payload, CHUNK_HDR);
+            return CHUNK_HDR + payload.byteLength;
+        }
+
+        function sendJpegChunked(arrayBuffer) {
+            if (!dataChannel || dataChannel.readyState !== 'open') return;
+            const u8 = new Uint8Array(arrayBuffer);
+            const chunkCount = Math.ceil(u8.length / CHUNK_SIZE) || 1;
+            if (chunkCount > CHUNK_SEQ_MASK + 1) {
+                log('Drop frame: too many chunks for 7-bit seq (' + chunkCount + ')');
+                return;
+            }
+            const need = CHUNK_HDR + CHUNK_SIZE;
+            if (!sendChunkBuf || sendChunkBuf.length < need) {
+                sendChunkBuf = new Uint8Array(need);
+            }
+            let offset = 0;
+            let seq = 0;
+            while (offset < u8.length) {
+                const end = Math.min(offset + CHUNK_SIZE, u8.length);
+                let chunkId = seq & CHUNK_SEQ_MASK;
+                if (end >= u8.length) chunkId |= CHUNK_END;
+                const slice = u8.subarray(offset, end);
+                const n = encodeChunkInto(sendChunkBuf, chunkId, slice);
+                dataChannel.send(sendChunkBuf.subarray(0, n));
+                offset = end;
+                seq++;
+            }
+        }
+
+        function handleChunkedMessage(data) {
+            const u8 = data instanceof ArrayBuffer ? new Uint8Array(data) : new Uint8Array(data);
+            if (u8.length < CHUNK_HDR) return;
+            const chunkId = u8[0];
+            const seq = chunkId & CHUNK_SEQ_MASK;
+            const isEnd = (chunkId & CHUNK_END) !== 0;
+            const payloadLen = (u8[1] << 24) | (u8[2] << 16) | (u8[3] << 8) | u8[4];
+            if (payloadLen + CHUNK_HDR !== u8.length) {
+                log('Bad chunk len');
+                resetReasm();
+                return;
+            }
+            const payload = u8.subarray(CHUNK_HDR);
+
+            // Completeness = continuous seq from 0..END (no payload content checks)
+            if (seq === 0) {
+                if (!reasm || reasm.length < Math.max(payloadLen, CHUNK_SIZE * 2)) {
+                    reasm = new Uint8Array(Math.max(payloadLen, CHUNK_SIZE * 2));
+                }
+                reasm.set(payload, 0);
+                reasm._size = payloadLen;
+                reasmActive = true;
+                reasmNextSeq = 1;
+            } else if (!reasmActive || !reasm) {
+                log('Drop chunk seq ' + seq + ' without BOS');
+                return;
+            } else if (seq !== reasmNextSeq) {
+                log('Drop incomplete frame: expected seq ' + reasmNextSeq + ' got ' + seq);
+                resetReasm();
+                return;
+            } else {
+                const size = reasm._size || 0;
+                if (size + payloadLen > reasm.length) {
+                    const nb = new Uint8Array(Math.max(size + payloadLen, reasm.length * 2));
+                    nb.set(reasm.subarray(0, size), 0);
+                    nb._size = size;
+                    reasm = nb;
+                }
+                reasm.set(payload, reasm._size);
+                reasm._size += payloadLen;
+                reasmNextSeq++;
+            }
+
+            if (isEnd) {
+                if (!reasmActive) {
+                    resetReasm();
+                    return;
+                }
+                const size = reasm._size || 0;
+                const blob = new Blob([reasm.subarray(0, size)], { type: 'image/jpeg' });
+                const url = URL.createObjectURL(blob);
+                const old = remoteImage.src;
+                remoteImage.src = url;
+                if (old && old.startsWith('blob:')) setTimeout(() => URL.revokeObjectURL(old), 100);
+                setFrames(frameCount + 1);
+                resetReasm();
+            }
+        }
+
+        function setupDataChannel(dc) {
+            dataChannel = dc;
+            dataChannel.binaryType = 'arraybuffer';
+            dataChannel.onopen = () => {
+                log('DC Open: ' + dc.label);
+                window.__jpeg_dc_open = true;
+                setStatus('CONNECTED');
+                callState = 'CONNECTED';
+                btnHangup.disabled = false;
+                startVideoLoop();
+            };
+            dataChannel.onclose = () => {
+                log('DC Closed');
+                window.__jpeg_dc_open = false;
+            };
+            dataChannel.onmessage = (e) => handleChunkedMessage(e.data);
+        }
+
+        function createPeerConnection() {
+            pc = new RTCPeerConnection({
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+                bundlePolicy: 'max-bundle',
+                rtcpMuxPolicy: 'require',
+                sdpSemantics: 'unified-plan'
+            });
+            pc.oniceconnectionstatechange = () => {
+                window.__jpeg_ice = pc.iceConnectionState;
+                log('ICE: ' + pc.iceConnectionState);
+                if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+                    setStatus('P2P CONNECTED');
+                }
+            };
+            pc.onicecandidate = (e) => {
+                if (e.candidate) {
+                    sendSignalingMessage({
+                        type: 'candidate',
+                        candidate: e.candidate.candidate,
+                        sdpMid: e.candidate.sdpMid,
+                        sdpMLineIndex: e.candidate.sdpMLineIndex
+                    });
+                }
+            };
+            // Prefer ESP-created channel (partial reliable, maxRetransmit=1)
+            pc.ondatachannel = (e) => {
+                log('DataChannel received: ' + e.channel.label);
+                setupDataChannel(e.channel);
+            };
+
+            pc.ontrack = (event) => {
+                log('Remote audio track: ' + event.track.kind);
+            };
+            return pc;
+        }
+
+        async function ensureLocalMedia() {
+            if (localStream) return localStream;
+            const sendRes = getSendResolution();
+            const constraints = {
+                audio: chkSendAudio.checked,
+                // Prefer a camera size at least as large as send resolution; canvas scales down/up for ESP
+                video: chkSendVideo.checked ? {
+                    width: { ideal: Math.max(sendRes.width, 640) },
+                    height: { ideal: Math.max(sendRes.height, 480) },
+                    frameRate: { ideal: getSendFps(), max: getSendFps() }
+                } : false
+            };
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia(constraints);
+                localVideo.srcObject = localStream;
+                // Needed for canvas capture (esp. headless / autoplay policies)
+                try { await localVideo.play(); } catch (e) { log('localVideo.play: ' + e.message); }
+                window.__jpeg_sent_frames = 0;
+                window.__jpeg_sent_bytes = 0;
+                window.__jpeg_sent_sizes = [];
+                if (pc) {
+                    localStream.getAudioTracks().forEach(track => pc.addTrack(track, localStream));
+                }
+                const vtracks = localStream.getVideoTracks();
+                log('Local media OK videoTracks=' + vtracks.length +
+                    (vtracks[0] ? (' label=' + vtracks[0].label + ' enabled=' + vtracks[0].enabled +
+                     ' muted=' + vtracks[0].muted + ' ready=' + vtracks[0].readyState) : ''));
+            } catch (e) {
+                log('Media error: ' + e.message);
+            }
+            return localStream;
+        }
+
+        function startVideoLoop() {
+            if (sendLoopTimer) return;
+            const tick = () => {
+                const tickStart = performance.now();
+                sendLoopTimer = null;
+                if (callState !== 'CONNECTED' || !dataChannel || dataChannel.readyState !== 'open' || !chkSendVideo.checked) {
+                    return;
+                }
+                if (!localVideo.videoWidth || localVideo.readyState < 2) {
+                    sendLoopTimer = setTimeout(tick, Math.round(1000 / getSendFps()));
+                    return;
+                }
+                const sendRes = getSendResolution();
+                if (sendCanvas.width !== sendRes.width || sendCanvas.height !== sendRes.height) {
+                    sendCanvas.width = sendRes.width;
+                    sendCanvas.height = sendRes.height;
+                }
+                // Scale camera frame to selected resolution before JPEG encode/send
+                ctx.drawImage(localVideo, 0, 0, sendRes.width, sendRes.height);
+                // Quick liveness: sample a few pixels (black camera = all near 0)
+                try {
+                    const sample = ctx.getImageData(0, 0, Math.min(32, sendRes.width), Math.min(32, sendRes.height)).data;
+                    let sum = 0;
+                    for (let i = 0; i < sample.length; i += 4) {
+                        sum += sample[i] + sample[i + 1] + sample[i + 2];
+                    }
+                    window.__jpeg_canvas_avg = sum / ((sample.length / 4) * 3);
+                } catch (e) {}
+                sendCanvas.toBlob((blob) => {
+                    if (blob) {
+                        window.__jpeg_sent_frames = (window.__jpeg_sent_frames || 0) + 1;
+                        window.__jpeg_sent_bytes = (window.__jpeg_sent_bytes || 0) + blob.size;
+                        const sizes = window.__jpeg_sent_sizes || (window.__jpeg_sent_sizes = []);
+                        if (sizes.length < 32) sizes.push(blob.size);
+                        blob.arrayBuffer().then(buf => sendJpegChunked(buf));
+                    }
+                    const interval = 1000 / getSendFps();
+                    const delay = Math.max(0, interval - (performance.now() - tickStart));
+                    sendLoopTimer = setTimeout(tick, delay);
+                }, 'image/jpeg', getJpegQuality());
+            };
+            tick();
+        }
+
+        selSendRes.addEventListener('change', () => {
+            const r = getSendResolution();
+            log(`Send resolution set to ${r.width}x${r.height}`);
+            localStorage.setItem('jpegSendRes', selSendRes.value);
+        });
+
+        selSendFps.addEventListener('change', async () => {
+            const fps = getSendFps();
+            localStorage.setItem('jpegSendFps', String(fps));
+            const track = localStream && localStream.getVideoTracks()[0];
+            if (track) {
+                try {
+                    await track.applyConstraints({ frameRate: { ideal: fps, max: fps } });
+                } catch (e) {
+                    log('Camera FPS constraint rejected: ' + e.message);
+                }
+            }
+            log('Send FPS set to ' + fps);
+        });
+
+        selJpegQuality.addEventListener('change', () => {
+            localStorage.setItem('jpegQuality', selJpegQuality.value);
+            log('JPEG quality set to ' + Math.round(getJpegQuality() * 100) + '%');
+        });
+
+        function stopVideoLoop() {
+            if (sendLoopTimer) {
+                clearTimeout(sendLoopTimer);
+                sendLoopTimer = null;
+            }
+        }
+
+        function resetPeerConnection() {
+            stopVideoLoop();
+            callState = 'NONE';
+            setStatus('Idle (Signaling Connected)');
+            btnAccept.classList.remove('ringing', 'active');
+            btnAccept.disabled = true;
+            if (dataChannel) { try { dataChannel.close(); } catch (e) {} dataChannel = null; }
+            if (pc) { try { pc.close(); } catch (e) {} pc = null; }
+            if (localStream) {
+                localStream.getTracks().forEach(t => t.stop());
+                localStream = null;
+                localVideo.srcObject = null;
+            }
+            remoteImage.src = '';
+            remoteCandidatesQueue = [];
+            resetReasm();
+            sendChunkBuf = null;
+            window.__jpeg_dc_open = false;
+            window.__jpeg_ice = 'closed';
+        }
+
+        async function handleOffer(message) {
+            if (!pc) createPeerConnection();
+            await ensureLocalMedia();
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    if (!pc.getSenders().some(s => s.track === track)) {
+                        // Only add audio tracks to RTP; video goes over DC
+                        if (track.kind === 'audio') pc.addTrack(track, localStream);
+                    }
+                });
+            }
+            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: message.sdp }));
+            for (const cand of remoteCandidatesQueue) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate({
+                        candidate: cand.candidate,
+                        sdpMid: cand.sdpMid || '0',
+                        sdpMLineIndex: cand.sdpMLineIndex || 0
+                    }));
+                } catch (e) {}
+            }
+            remoteCandidatesQueue = [];
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            sendSignalingMessage({ type: 'answer', sdp: answer.sdp });
+            callState = 'CONNECTING';
+            setStatus('Answering...');
+        }
+
+        async function handleSignalingMessage(message) {
+            switch (message.type) {
+                case 'connected':
+                case 'heartbeat':
+                    break;
+                case 'offer':
+                    await handleOffer(message);
+                    break;
+                case 'answer':
+                    if (pc) await pc.setRemoteDescription(new RTCSessionDescription(message));
+                    break;
+                case 'candidate':
+                    if (pc && pc.remoteDescription) {
+                        try {
+                            await pc.addIceCandidate(new RTCIceCandidate({
+                                candidate: message.candidate,
+                                sdpMid: message.sdpMid || '0',
+                                sdpMLineIndex: message.sdpMLineIndex || 0
+                            }));
+                        } catch (e) {}
+                    } else {
+                        remoteCandidatesQueue.push(message);
+                    }
+                    break;
+                case 'bye':
+                    resetPeerConnection();
+                    break;
+                case 'customized':
+                    if (message.data === 'RING') {
+                        callState = 'RINGING';
+                        btnAccept.disabled = false;
+                        btnAccept.classList.add('ringing');
+                        setStatus('Incoming Call...');
+                        log('RING from ESP');
+                    } else if (message.data === 'ACCEPT_CALL') {
+                        log('Peer accepted');
+                    } else if (message.data === 'DENY_CALL') {
+                        resetPeerConnection();
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        function connectSignaling() {
+            if (eventSource) eventSource.close();
+            eventSource = new EventSource(signalingUrl);
+            eventSource.onopen = () => {
+                log('SSE connected');
+                setStatus('Signaling Connected');
+                btnConnect.disabled = true;
+                btnRing.disabled = false;
+                btnHangup.disabled = false;
+            };
+            eventSource.onmessage = async (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    await handleSignalingMessage(message);
+                } catch (e) {
+                    console.error(e);
+                }
+            };
+            eventSource.onerror = () => {
+                log('SSE error, reconnecting...');
+                setStatus('Signaling error');
+                if (eventSource) {
+                    eventSource.close();
+                    setTimeout(connectSignaling, 3000);
+                }
+            };
+        }
+
+        btnConnect.onclick = connectSignaling;
+
+        btnAccept.onclick = async () => {
+            sendCustomCommand('ACCEPT_CALL');
+            btnAccept.classList.remove('ringing');
+            btnAccept.disabled = true;
+            callState = 'CONNECTING';
+            setStatus('Accepting...');
+            await ensureLocalMedia();
+            log('ACCEPT_CALL sent');
+        };
+
+        btnRing.onclick = () => {
+            sendCustomCommand('RING');
+            callState = 'RINGING';
+            setStatus('Ringing ESP...');
+            log('RING sent to ESP');
+        };
+
+        btnHangup.onclick = () => {
+            sendCustomCommand('DENY_CALL');
+            resetPeerConnection();
+            setStatus('Signaling Connected');
+        };
+
+        // Auto-connect when opened from device
+        window.addEventListener('load', () => {
+            const params = new URLSearchParams(window.location.search);
+            // Prefer explicit res=WxH, then w=/h= query (UT), then localStorage, else 640x480
+            let want = params.get('res');
+            const qw = parseInt(params.get('w') || '', 10);
+            const qh = parseInt(params.get('h') || '', 10);
+            if (!want && qw > 0 && qh > 0) {
+                want = `${qw}x${qh}`;
+            }
+            if (!want) {
+                want = localStorage.getItem('jpegSendRes');
+            }
+            if (want && [...selSendRes.options].some(o => o.value === want)) {
+                selSendRes.value = want;
+            } else if (want && qw > 0 && qh > 0) {
+                // Allow custom w/h even if not in the dropdown
+                const opt = document.createElement('option');
+                opt.value = want;
+                opt.textContent = want + ' (custom)';
+                selSendRes.appendChild(opt);
+                selSendRes.value = want;
+            } else {
+                selSendRes.value = '640x480';
+            }
+            localStorage.setItem('jpegSendRes', selSendRes.value);
+
+            const wantFps = params.get('fps') || localStorage.getItem('jpegSendFps') || '10';
+            if ([...selSendFps.options].some(o => o.value === wantFps)) {
+                selSendFps.value = wantFps;
+            }
+            const wantQuality = params.get('quality') || localStorage.getItem('jpegQuality') || '0.4';
+            if ([...selJpegQuality.options].some(o => o.value === wantQuality)) {
+                selJpegQuality.value = wantQuality;
+            }
+            localStorage.setItem('jpegSendFps', String(getSendFps()));
+            localStorage.setItem('jpegQuality', String(getJpegQuality()));
+            log('Page loaded. Click Connect Signaling, then Accept when ESP rings (or Ring ESP).');
+            log('Send resolution: ' + selSendRes.value);
+            log('Send settings: ' + getSendFps() + ' FPS, JPEG quality ' +
+                Math.round(getJpegQuality() * 100) + '%');
+            if (params.get('autoconnect') === '1') {
+                connectSignaling();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -59,6 +59,11 @@ typedef struct {
     bool                         manual_ch_create;        /*!< When set, disable auto create data channel in SCTP client mode if `enable_data_channel` set
                                                                User need manually call `esp_peer_create_data_channel` instead */
     bool                         video_over_data_channel; /*!< Whether send and receive video data through data channel */
+    bool                         video_dc_chunked;        /*!< Whether split JPEG video frames over data channel
+                                                               When false (default), send/recv whole frames (compatible with videocall_demo)
+                                                               When true, use [1B flag][4B BE len][payload] chunks; flag bit0=Start, bit1=End */
+    uint16_t                     video_dc_chunk_size;     /*!< Max payload bytes per chunk when `video_dc_chunked` is true
+                                                               Default 10000 if set to 0 */
     bool                         no_auto_reconnect;       /*!< Disable auto reconnect
                                                                In room related WebRTC application, connection build up with peer
                                                                If peer leaves, it will auto re-enter same room (send new SDP) after clear up
