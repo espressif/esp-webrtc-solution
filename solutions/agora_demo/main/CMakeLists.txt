@@ -1,0 +1,26 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "board.c"
+        "media_sys.c"
+        "webrtc.c"
+        "agora_auth.c"
+        "agora_signaling.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        av_render
+        codec_board
+        common
+        console
+        esp_event
+        esp_http_client
+        esp_timer
+        esp_webrtc
+        esp_wifi
+        espressif__esp_audio_codec
+        espressif__esp_capture
+        espressif__esp_codec_dev
+        mbedtls
+        nvs_flash
+        webrtc_utils
+)

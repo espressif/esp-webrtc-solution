@@ -1,0 +1,36 @@
+menu "Agora duplex WHIP demo"
+
+config AGORA_DEMO_APP_ID
+    string "Agora App ID"
+    default ""
+    help
+        Agora App ID placed in the JWT appID claim.
+
+config AGORA_DEMO_APP_CERT
+    string "Agora App Cert"
+    default ""
+    help
+        Agora App Certificate used when dynamic authentication is enabled.
+        When dynamic authentication is disabled, use the App ID.
+
+config AGORA_DEMO_CHANNEL_NAME
+    string "Agora channel name"
+    default ""
+    help
+        Channel used in the WHIP URL and JWT streamID claim.
+
+config AGORA_DEMO_WHIP_BASE_URL
+    string "Agora WHIP endpoint base URL"
+    default "https://webrtc-whip.ap.staging-1-ali.myagoralab.com"
+    help
+        Endpoint origin or base path.
+
+config AGORA_DEMO_WIFI_SSID
+    string "Wi-Fi SSID"
+    default ""
+
+config AGORA_DEMO_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+
+endmenu
