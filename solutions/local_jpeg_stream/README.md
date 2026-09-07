@@ -20,7 +20,7 @@ Typical boards:
 | ESP32-S31 | `ESP32_S31_KORVO_1` | OV3660 (DVP) |
 | ESP32-P4 | `ESP32_P4_DEV_V14` | SC2336 (MIPI) |
 
-For other boards, see the [codec_board README](../../components/codec_board/README.md).
+For other boards, see the [esp_board_manager README](../../components/esp_board_manager/README.md).
 
 ## Quick start
 
@@ -51,7 +51,7 @@ Edit [`main/settings.h`](main/settings.h):
 | `WIFI_SSID` / `WIFI_PASSWORD` | Default Wi-Fi credentials |
 | `VIDEO_WIDTH` / `VIDEO_HEIGHT` / `VIDEO_FPS` | Capture / stream size and frame rate (keep these aligned with the camera format below) |
 | `VIDEO_SEND_RECV` | `true`: ESP sends and receives JPEG; `false`: ESP sends only (browser → ESP video off) |
-| `TEST_BOARD_NAME` | Board name for `codec_board` (auto-selected by target in most cases) |
+| `TEST_BOARD_NAME` | Board name for `esp_board_manager` (auto-selected by target in most cases) |
 | `JPEG_STREAM_RING_BUTTON` | GPIO used as the ring / accept button |
 
 Defaults by target (can be changed):
@@ -179,3 +179,39 @@ At the `esp>` prompt:
 - The device uses a self-signed HTTPS certificate; the browser will warn once until you proceed.
 - If the peer disconnects unexpectedly, wait a few seconds before reconnecting (`stop` then `start` if needed).
 - For best performance, keep camera output as **hardware JPEG** and match `VIDEO_*` in `settings.h` to that format.
+
+## How to build
+
+### Build
+
+Board configuration uses [`esp_board_manager`](https://components.espressif.com/components/espressif/esp_board_manager). Install or upgrade the helper first:
+
+```bash
+pip install --upgrade esp-bmgr-assist
+```
+
+List supported boards:
+
+```bash
+idf.py gen-bmgr-config -l
+```
+
+Select your board (generates board config and sets the chip target):
+
+```bash
+idf.py gen-bmgr-config -b YOUR_BOARD_NAME
+# Example:
+idf.py gen-bmgr-config -b esp32_p4_function_ev_board
+```
+
+Build and flash:
+
+```bash
+idf.py -p YOUR_SERIAL_DEVICE flash monitor
+```
+
+> Notes: Board manager may overwrite some sdkconfig values defined in `sdkconfig.defaults`.
+> Prefer attaching overwritten options into an appended sdkconfig folder when needed.
+
+For how to customize a board with `esp_board_manager`, see [custom-board](https://github.com/espressif/esp-board-manager/tree/main/esp_board_manager#custom-board).
+

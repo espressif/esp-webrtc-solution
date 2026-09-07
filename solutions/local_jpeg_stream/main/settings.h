@@ -15,16 +15,6 @@
 extern "C" {
 #endif
 
-/**
- * @brief  Board name setting refer to `codec_board` README.md for more details
- */
-#if CONFIG_IDF_TARGET_ESP32P4
-#define TEST_BOARD_NAME "ESP32_P4_DEV_V14"
-#elif CONFIG_IDF_TARGET_ESP32S31
-#define TEST_BOARD_NAME "ESP32_S31_KORVO_1"
-#else
-#define TEST_BOARD_NAME "S3_Korvo_V2"
-#endif
 
 /**
  * @brief  Video resolution settings

@@ -6,6 +6,4 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 list(APPEND EXTRA_COMPONENT_DIRS "../common")
 
-list(APPEND EXTRA_COMPONENT_DIRS "../../components")
-
 project(rtsp_demo)

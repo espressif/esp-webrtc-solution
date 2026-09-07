@@ -2,11 +2,22 @@
 dependencies:
   ## Required IDF version
   idf:
-    version: '>=5.0'
+    version: ">=5.0"
   espressif/esp_peer:
     version: "*"
     override_path: ../../../components/esp_peer
-  espressif/apprtc_signal:
+  apprtc_signal:
     path: ../../../components/esp_webrtc/impl/apprtc_signal
     version: "*"
-    override_path: ../../../components/esp_webrtc/impl/apprtc_signal
+  tempotian/av_render:
+    version: "*"
+    override_path: ../../../components/av_render
+  tempotian/media_lib_utils:
+    version: "*"
+    override_path: ../../../components/media_lib_utils
+  esp_webrtc:
+    path: ../../../components/esp_webrtc
+    version: "*"
+  webrtc_utils:
+    version: "*"
+    path: ../../../components/webrtc_utils

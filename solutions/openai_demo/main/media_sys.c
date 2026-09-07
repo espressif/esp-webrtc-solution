@@ -7,8 +7,6 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
-#include "codec_init.h"
-#include "codec_board.h"
 #include "av_render.h"
 #include "common.h"
 #include "settings.h"
@@ -20,6 +18,8 @@
 #include "esp_capture_defaults.h"
 #include "esp_capture_sink.h"
 #include "esp_log.h"
+#include "esp_board_manager_defs.h"
+#include "esp_board_manager_includes.h"
 
 #define RET_ON_NULL(ptr, v) do {                                \
     if (ptr == NULL) {                                          \
@@ -42,6 +42,27 @@ typedef struct {
 
 static capture_system_t capture_sys;
 static player_system_t  player_sys;
+
+static esp_codec_dev_handle_t get_record_handle(void)
+{
+    dev_audio_codec_handles_t *codec_handle = NULL;
+    esp_err_t ret = esp_board_device_get_handle(ESP_BOARD_DEVICE_NAME_AUDIO_ADC, (void **)&codec_handle);
+    if (ret == ESP_OK) {
+        esp_codec_dev_set_in_gain(codec_handle->codec_dev, 32);
+        return codec_handle->codec_dev;
+    }
+    return NULL;
+}
+
+static esp_codec_dev_handle_t get_playback_handle(void)
+{
+    dev_audio_codec_handles_t *codec_handle = NULL;
+    esp_err_t ret = esp_board_device_get_handle(ESP_BOARD_DEVICE_NAME_AUDIO_DAC, (void **)&codec_handle);
+    if (ret == ESP_OK) {
+        return codec_handle->codec_dev;
+    }
+    return NULL;
+}
 
 static int build_capture_system(void)
 {

@@ -9,50 +9,28 @@
 
 #include <stdio.h>
 #include "esp_log.h"
-#include "codec_init.h"
-#include "codec_board.h"
-#include "esp_codec_dev.h"
-#include "sdkconfig.h"
-#include "settings.h"
-#if CONFIG_IDF_TARGET_ESP32P4
-#include "esp_cam_sensor_xclk.h"
-#endif
+#include "esp_board_manager.h"
+#include "esp_board_manager_defs.h"
 
 static const char *TAG = "Board";
-
-static int enable_p4_eye_camera(camera_cfg_t *cfg, bool enable)
-{
-    if (cfg->pwr == -1) {
-        return 0;
-    }
-    int ret = 0;
-#if CONFIG_IDF_TARGET_ESP32P4
-    esp_cam_sensor_xclk_handle_t xclk_handle = NULL;
-    if (enable) {
-        esp_cam_sensor_xclk_config_t cam_xclk_config = {
-            .esp_clock_router_cfg = {
-                .xclk_pin = cfg->xclk,
-                .xclk_freq_hz = 24 * 1000000,
-            }
-        };
-        esp_cam_sensor_xclk_allocate(ESP_CAM_SENSOR_XCLK_ESP_CLOCK_ROUTER, &xclk_handle);
-        esp_cam_sensor_xclk_start(xclk_handle, &cam_xclk_config);
-    }
-#endif
-    return ret;
-}
 
 void init_board()
 {
     ESP_LOGI(TAG, "Init board.");
-    set_codec_board_type(TEST_BOARD_NAME);
-    // Notes when use playback and record at same time, must set reuse_dev = false
-    codec_init_cfg_t cfg = {.reuse_dev = false};
-    if (strcmp(TEST_BOARD_NAME, "ESP32_P4_EYE") == 0) {
-        cfg.in_mode = CODEC_I2S_MODE_PDM;
-        camera_cfg_t camera_cfg = {};
-        get_camera_cfg(&camera_cfg);
-        enable_p4_eye_camera(&camera_cfg, true);
+    // Initialize for camera and audio devices
+    esp_err_t ret;
+    ret = esp_board_device_init(ESP_BOARD_DEVICE_NAME_AUDIO_ADC);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init audio ADC device");
+        return;
     }
-    init_codec(&cfg);
+    ret = esp_board_device_init(ESP_BOARD_DEVICE_NAME_AUDIO_DAC);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init audio DAC device");
+    }
+    ret = esp_board_device_init(ESP_BOARD_DEVICE_NAME_CAMERA);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to init camera device");
+        return;
+    }
 }

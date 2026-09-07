@@ -3,3 +3,18 @@ dependencies:
     version: '>=5.0'
   espressif/usb_device_uvc:
     version: "*"
+  tempotian/av_render:
+    version: "*"
+    override_path: ../../../components/av_render
+  tempotian/media_lib_utils:
+    version: "*"
+    override_path: ../../../components/media_lib_utils
+  esp_webrtc:
+    path: ../../../components/esp_webrtc
+    version: "*"
+  webrtc_utils:
+    version: "*"
+    path: ../../../components/webrtc_utils
+  espressif/esp_peer:
+    version: "*"
+    override_path: ../../../components/esp_peer

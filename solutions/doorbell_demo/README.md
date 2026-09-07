@@ -4,7 +4,11 @@
 This demo demonstrates how to use `esp_webrtc` to build a doorbell application. The code is based on the Google [apprtc](https://github.com/webrtc/apprtc) project, with custom signaling through WebSocket.
 
 ## Hardware requirement
-The default setup uses the [ESP32P4-Function-Ev-Board](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32p4/esp32-p4-function-ev-board/user_guide.html), which includes one SC2336 camera.
+
+Any board with a microphone and camera that is supported by [esp_board_manager](https://components.espressif.com/components/espressif/esp_board_manager/versions/0.7.2/readme).
+
+ESP32-P4 boards are recommended for high-resolution video with the hardware H264 encoder.
+
 
 ## How to build
 
@@ -23,9 +27,57 @@ CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 ```
 
 ### Build
+
+Board configuration uses [`esp_board_manager`](https://components.espressif.com/components/espressif/esp_board_manager). Install or upgrade the helper first:
+
+```bash
+pip install --upgrade esp-bmgr-assist
+```
+
+List supported boards:
+
+```bash
+idf.py gen-bmgr-config -l
+```
+
+Select your board (generates board config and sets the chip target):
+
+```bash
+idf.py gen-bmgr-config -b YOUR_BOARD_NAME
+# Example:
+idf.py gen-bmgr-config -b esp32_p4_function_ev_board
+```
+
+Build and flash:
+
+```bash
+idf.py -p YOUR_SERIAL_DEVICE flash monitor
+```
+
+> **Note:** `gen-bmgr-config` may override options from `sdkconfig.defaults`. If a setting does not take effect, check `components/gen_bmgr_codes/board_manager.defaults` and keep critical overrides in an appended sdkconfig file when needed.
+
+To define a custom board, see [custom-board](https://github.com/espressif/esp-board-manager/tree/main/esp_board_manager#custom-board).
+
+
+## List all supported boards
+idf.py bmgr -l/idf.py gen-bmgr-config -l
+```
+2. Select board
+If your board supported by can selected it directly through the board name, like:
+```
+idf.py bmgr -b/idf.py gen-bmgr-config -b YOUR_BOARD_NAME
+idf.py gen-bmgr-config -b esp32_p4x_c5_function_ev
+```
+
+3. Build and Flash
 ```
 idf.py -p YOUR_SERIAL_DEVICE flash monitor
 ```
+
+>!notes Board manager may overwrote some sdkconfig defined in sdkconfig.defaults
+Better to attach all overwrote sdkconfig into a appended folder
+
+For how to customized a board use `esp_board_manager` refer [custom-board](https://github.com/espressif/esp-board-manager/tree/main/esp_board_manager#custom-board).
 
 ## Testing
 
@@ -57,7 +109,7 @@ Then, use a Chrome/Edge browser to enter the same room at [DoorBellDemo](https:/
 
 2. **Calling:**
    - Press the `Ring` button (boot key) on the board. The board will play the ring music
-   - The browser will popup `Accept Call` or `Deny Call` icon while playing ring music. If accepted, a two-way voice communication and one-way video communication (board to browser) will be established between the board and browser. If denied, the call will hang up.  
+   - The browser will popup `Accept Call` or `Deny Call` icon while playing ring music. If accepted, a two-way voice communication and one-way video communication (board to browser) will be established between the board and browser. If denied, the call will hang up.
    To use a different key as the Ring button, change the `DOOR_BELL_RING_BUTTON`  in [settings.h](main/settings.h).
 
 3. **Clear-up Test:**
