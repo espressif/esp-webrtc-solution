@@ -120,16 +120,43 @@ Video resolution and frame rate are configured in [main/settings.h](main/setting
 
 ### 4. Board Configuration
 
-The board type is automatically detected based on the target chip. To support other boards, see the [codec_board README](../../components/codec_board/README.md).
+The board type is automatically detected based on the target chip. To support other boards, see the [esp_board_manager README](../../components/esp_board_manager/README.md).
 
 ## Building and Flashing
 
 ### Build
 
+Board configuration uses [`esp_board_manager`](https://components.espressif.com/components/espressif/esp_board_manager). Install or upgrade the helper first:
+
 ```bash
-cd solutions/kms_demo
-idf.py build
+pip install --upgrade esp-bmgr-assist
 ```
+
+List supported boards:
+
+```bash
+idf.py gen-bmgr-config -l
+```
+
+Select your board (generates board config and sets the chip target):
+
+```bash
+idf.py gen-bmgr-config -b YOUR_BOARD_NAME
+# Example:
+idf.py gen-bmgr-config -b esp32_p4_function_ev_board
+```
+
+Build and flash:
+
+```bash
+idf.py -p YOUR_SERIAL_DEVICE flash monitor
+```
+
+> Notes: Board manager may overwrite some sdkconfig values defined in `sdkconfig.defaults`.
+> Prefer attaching overwritten options into an appended sdkconfig folder when needed.
+
+For how to customize a board with `esp_board_manager`, see [custom-board](https://github.com/espressif/esp-board-manager/tree/main/esp_board_manager#custom-board).
+
 
 ### Flash and Monitor
 

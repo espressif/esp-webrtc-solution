@@ -47,7 +47,7 @@ You may use either the IDF master branch or the IDF release v5.4.
    Some WHIP servers may only support ICE Lite mode. Ensure to enable ICE Lite in [main/settings.h](main/settings.h) if required.
 
 4. **Support for Other Boards**
-   For instructions on supporting other boards, see the [codec_board README](../../components/codec_board/README.md).
+   For instructions on supporting other boards, see the [esp_board_manager README](../../components/esp_board_manager/README.md).
 
 ### Building and Flashing
 
@@ -55,6 +55,41 @@ Build, flash, and monitor your device with:
 ```bash
 idf.py -p YOUR_SERIAL_DEVICE flash monitor
 ```
+
+
+### Build
+
+Board configuration uses [`esp_board_manager`](https://components.espressif.com/components/espressif/esp_board_manager). Install or upgrade the helper first:
+
+```bash
+pip install --upgrade esp-bmgr-assist
+```
+
+List supported boards:
+
+```bash
+idf.py gen-bmgr-config -l
+```
+
+Select your board (generates board config and sets the chip target):
+
+```bash
+idf.py gen-bmgr-config -b YOUR_BOARD_NAME
+# Example:
+idf.py gen-bmgr-config -b esp32_p4_function_ev_board
+```
+
+Build and flash:
+
+```bash
+idf.py -p YOUR_SERIAL_DEVICE flash monitor
+```
+
+> Notes: Board manager may overwrite some sdkconfig values defined in `sdkconfig.defaults`.
+> Prefer attaching overwritten options into an appended sdkconfig folder when needed.
+
+For how to customize a board with `esp_board_manager`, see [custom-board](https://github.com/espressif/esp-board-manager/tree/main/esp_board_manager#custom-board).
+
 
 ## Testing
 

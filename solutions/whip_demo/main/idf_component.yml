@@ -2,7 +2,7 @@
 dependencies:
   ## Required IDF version
   idf:
-    version: ">=4.1.0"
+    version: ">=5.0"
   ## Import needed components only
   espressif/esp_h264:
     version: "~1.3"
@@ -14,3 +14,17 @@ dependencies:
   whip_signal:
     path: ../../../components/esp_webrtc/impl/whip_signal
     version: "*"
+  espressif/esp_board_manager:
+    version: "~0.7"
+  tempotian/av_render:
+    version: "*"
+    override_path: ../../../components/av_render
+  tempotian/media_lib_utils:
+    version: "*"
+    override_path: ../../../components/media_lib_utils
+  esp_webrtc:
+    path: ../../../components/esp_webrtc
+    version: "*"
+  webrtc_utils:
+    version: "*"
+    path: ../../../components/webrtc_utils

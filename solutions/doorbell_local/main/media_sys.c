@@ -7,11 +7,6 @@
    CONDITIONS OF ANY KIND, either express or implied.
 */
 
-#include "codec_init.h"
-#include "codec_board.h"
-#if CONFIG_IDF_TARGET_ESP32P4
-#include "esp_video_init.h"
-#endif
 #include "av_render.h"
 #include "av_render_default.h"
 #include "common.h"
@@ -25,6 +20,8 @@
 #include "esp_audio_dec_default.h"
 #include "esp_capture_defaults.h"
 #include "esp_capture_sink.h"
+#include "esp_board_manager_defs.h"
+#include "esp_board_manager_includes.h"
 
 #define TAG "MEDIA_SYS"
 
@@ -58,88 +55,45 @@ static int            music_duration;
 
 static esp_capture_video_src_if_t *create_video_source(void)
 {
-    camera_cfg_t cam_pin_cfg = {};
-    int ret = get_camera_cfg(&cam_pin_cfg);
-    if (ret != 0) {
-        return NULL;
-    }
-#if CONFIG_IDF_TARGET_ESP32P4
-    esp_video_init_csi_config_t csi_config = { 0 };
-    esp_video_init_dvp_config_t dvp_config = { 0 };
-    esp_video_init_config_t cam_config = { 0 };
-    if (cam_pin_cfg.type == CAMERA_TYPE_MIPI) {
-        csi_config.sccb_config.i2c_handle = get_i2c_bus_handle(0);
-        csi_config.sccb_config.freq = 100000;
-        csi_config.reset_pin = cam_pin_cfg.reset;
-        csi_config.pwdn_pin = cam_pin_cfg.pwr;
-        ESP_LOGI(TAG, "Use i2c handle %p", csi_config.sccb_config.i2c_handle);
-        cam_config.csi = &csi_config;
-        if (cam_pin_cfg.xclk != -1) {
-            esp_cam_sensor_xclk_handle_t xclk_handle = NULL;
-            esp_cam_sensor_xclk_config_t xclk_config = {
-                .esp_clock_router_cfg = {
-                    .xclk_pin = cam_pin_cfg.xclk,
-                    .xclk_freq_hz = 24000000,
-                }
-            };
-            ESP_ERROR_CHECK(esp_cam_sensor_xclk_allocate(ESP_CAM_SENSOR_XCLK_ESP_CLOCK_ROUTER, &xclk_handle));
-            ESP_ERROR_CHECK(esp_cam_sensor_xclk_start(xclk_handle, &xclk_config));
-        }
-    } else if (cam_pin_cfg.type == CAMERA_TYPE_DVP) {
-        dvp_config.reset_pin = cam_pin_cfg.reset;
-        dvp_config.pwdn_pin = cam_pin_cfg.pwr;
-        dvp_config.dvp_pin.data_width = CAM_CTLR_DATA_WIDTH_8;
-        dvp_config.dvp_pin.data_io[0] = cam_pin_cfg.data[0];
-        dvp_config.dvp_pin.data_io[1] = cam_pin_cfg.data[1];
-        dvp_config.dvp_pin.data_io[2] = cam_pin_cfg.data[2];
-        dvp_config.dvp_pin.data_io[3] = cam_pin_cfg.data[3];
-        dvp_config.dvp_pin.data_io[4] = cam_pin_cfg.data[4];
-        dvp_config.dvp_pin.data_io[5] = cam_pin_cfg.data[5];
-        dvp_config.dvp_pin.data_io[6] = cam_pin_cfg.data[6];
-        dvp_config.dvp_pin.data_io[7] = cam_pin_cfg.data[7];
-        dvp_config.dvp_pin.vsync_io = cam_pin_cfg.vsync;
-        dvp_config.dvp_pin.pclk_io = cam_pin_cfg.pclk;
-        dvp_config.dvp_pin.xclk_io = cam_pin_cfg.xclk;
-        dvp_config.dvp_pin.de_io = cam_pin_cfg.de;
-        dvp_config.xclk_freq = 20000000;
-        cam_config.dvp = &dvp_config;
-    }
-    ret = esp_video_init(&cam_config);
+#ifdef CONFIG_ESP_BOARD_DEV_CAMERA_SUPPORT
+    dev_camera_handle_t *camera_handle = NULL;
+    esp_err_t ret = esp_board_device_get_handle(ESP_BOARD_DEVICE_NAME_CAMERA, (void **)&camera_handle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Camera init failed with error 0x%x", ret);
+        ESP_LOGE(TAG, "Failed to get camera device");
         return NULL;
     }
     esp_capture_video_v4l2_src_cfg_t v4l2_cfg = {
-        .dev_name = "/dev/video0",
-        .buf_count = 3,
+        .buf_count = 2,
     };
+    strncpy(v4l2_cfg.dev_name, camera_handle->dev_path, sizeof(v4l2_cfg.dev_name) - 1);
     return esp_capture_new_video_v4l2_src(&v4l2_cfg);
+#else
+    return NULL;
 #endif
+}
 
-#if CONFIG_IDF_TARGET_ESP32S3
-    if (cam_pin_cfg.type == CAMERA_TYPE_DVP) {
-        esp_capture_video_dvp_src_cfg_t dvp_config = { 0 };
-        dvp_config.buf_count = 2;
-        dvp_config.reset_pin = cam_pin_cfg.reset;
-        dvp_config.pwr_pin = cam_pin_cfg.pwr;
-        dvp_config.data[0] = cam_pin_cfg.data[0];
-        dvp_config.data[1] = cam_pin_cfg.data[1];
-        dvp_config.data[2] = cam_pin_cfg.data[2];
-        dvp_config.data[3] = cam_pin_cfg.data[3];
-        dvp_config.data[4] = cam_pin_cfg.data[4];
-        dvp_config.data[5] = cam_pin_cfg.data[5];
-        dvp_config.data[6] = cam_pin_cfg.data[6];
-        dvp_config.data[7] = cam_pin_cfg.data[7];
-        dvp_config.vsync_pin = cam_pin_cfg.vsync;
-        dvp_config.href_pin = cam_pin_cfg.href;
-        dvp_config.pclk_pin = cam_pin_cfg.pclk;
-        dvp_config.xclk_pin = cam_pin_cfg.xclk;
-        dvp_config.xclk_freq = 20000000;
-        return esp_capture_new_video_dvp_src(&dvp_config);
+static esp_codec_dev_handle_t get_record_handle(void)
+{
+    dev_audio_codec_handles_t *codec_handle = NULL;
+    esp_err_t ret = esp_board_device_get_handle(ESP_BOARD_DEVICE_NAME_AUDIO_ADC, (void **)&codec_handle);
+    if (ret == ESP_OK) {
+        esp_codec_dev_set_in_gain(codec_handle->codec_dev, 32);
+        return codec_handle->codec_dev;
     }
-#endif
     return NULL;
 }
+
+static esp_codec_dev_handle_t get_playback_handle(void)
+{
+    dev_audio_codec_handles_t *codec_handle = NULL;
+    esp_err_t ret = esp_board_device_get_handle(ESP_BOARD_DEVICE_NAME_AUDIO_DAC, (void **)&codec_handle);
+    if (ret == ESP_OK) {
+        esp_codec_dev_set_out_vol(codec_handle->codec_dev, 70);
+        return codec_handle->codec_dev;
+    }
+    return NULL;
+}
+
 
 static int build_capture_system(void)
 {
@@ -169,6 +123,44 @@ static int build_capture_system(void)
     return 0;
 }
 
+static int get_lcd_config(lcd_render_cfg_t *cfg)
+{
+    dev_display_lcd_config_t *dev_cfg = NULL;
+    esp_board_manager_get_device_config(ESP_BOARD_DEVICE_NAME_DISPLAY_LCD, (void **)&dev_cfg);
+    if (dev_cfg == NULL) {
+        ESP_LOGE(TAG, "Failed to get display config");
+        return -1;
+    }
+    dev_display_lcd_handles_t *lcd_handle = NULL;
+    esp_board_manager_get_device_handle(ESP_BOARD_DEVICE_NAME_DISPLAY_LCD, (void **)&lcd_handle);
+    if (lcd_handle == NULL || lcd_handle->panel_handle == NULL) {
+        ESP_LOGE(TAG, "No display found");
+        return -1;
+    }
+    cfg->lcd_handle = lcd_handle->panel_handle;
+    if (strcmp(dev_cfg->sub_type, "rgb") == 0) {
+        cfg->rgb_panel = true;
+    } else if (strcmp(dev_cfg->sub_type, "dsi") == 0) {
+        cfg->dsi_panel = true;
+    }
+    if (cfg->rgb_panel || cfg->dsi_panel) {
+        dev_display_lcd_config_t override_cfg = *dev_cfg;
+        if (cfg->rgb_panel) {
+#ifdef CONFIG_ESP_BOARD_DEV_DISPLAY_LCD_SUB_RGB_SUPPORT
+            override_cfg.sub_cfg.rgb.panel_config.num_fbs = 2;
+#endif  /* CONFIG_ESP_BOARD_DEV_DISPLAY_LCD_SUB_RGB_SUPPORT */
+        } else if (cfg->dsi_panel) {
+#ifdef CONFIG_ESP_BOARD_DEV_DISPLAY_LCD_SUB_DSI_SUPPORT
+            override_cfg.sub_cfg.dsi.dpi_config.num_fbs = 2;
+#endif  /* CONFIG_ESP_BOARD_DEV_DISPLAY_LCD_SUB_DSI_SUPPORT */
+        }
+        // Turn on dual frame buffer for RGB or DSI panel to avoid tearing
+        esp_board_device_override_config(ESP_BOARD_DEVICE_NAME_DISPLAY_LCD, &override_cfg, sizeof(dev_display_lcd_config_t));
+        ESP_LOGI(TAG, "LCD configuration overridden");
+    }
+    return 0;
+}
+
 static int build_player_system()
 {
     i2s_render_cfg_t i2s_cfg = {
@@ -180,14 +172,15 @@ static int build_player_system()
         ESP_LOGE(TAG, "Fail to create audio render");
         return -1;
     }
-    lcd_render_cfg_t lcd_cfg = {
-        .lcd_handle = board_get_lcd_handle(),
-    };
-    player_sys.video_render = av_render_alloc_lcd_render(&lcd_cfg);
-
-    if (player_sys.video_render == NULL) {
-        ESP_LOGE(TAG, "Fail to create video render");
-        // Allow not display
+    lcd_render_cfg_t lcd_cfg = {0};
+    if (get_lcd_config(&lcd_cfg) < 0) {
+        ESP_LOGE(TAG, "Fail to get lcd config");
+    } else {
+        player_sys.video_render = av_render_alloc_lcd_render(&lcd_cfg);
+        if (player_sys.video_render == NULL) {
+            ESP_LOGE(TAG, "Fail to create video render");
+            // Allow not display
+        }
     }
     av_render_cfg_t render_cfg = {
         .audio_render = player_sys.audio_render,

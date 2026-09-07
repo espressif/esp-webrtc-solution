@@ -419,6 +419,7 @@ int create_wss(wss_sig_t *sg)
 
     esp_websocket_client_config_t ws_cfg = {
         .uri = sg->client_info.wss_url,
+        .task_stack = 8 *1024,
         .headers = origin,
 #ifdef CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
         .crt_bundle_attach = esp_crt_bundle_attach,

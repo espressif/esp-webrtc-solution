@@ -33,7 +33,6 @@
 #include "media_lib_os.h"
 #include "esp_timer.h"
 #include "esp_webrtc.h"
-#include "esp_codec_dev.h"
 #include "esp_webrtc_defaults.h"
 #include "esp_capture_sink.h"
 #include "esp_capture_advance.h"
@@ -93,7 +92,7 @@ typedef struct {
     bool                          send_going;
     esp_webrtc_media_provider_t   media_provider;
     esp_capture_sink_handle_t     capture_path;
-    esp_codec_dev_handle_t        play_handle;
+    av_render_handle_t            play_handle;
     esp_peer_audio_stream_info_t  recv_aud_info;
     esp_peer_video_stream_info_t  recv_vid_info;
     bool                          pending_connect;
@@ -1015,7 +1014,6 @@ int esp_webrtc_set_media_provider(esp_webrtc_handle_t handle, esp_webrtc_media_p
     }
     webrtc_t *rtc = (webrtc_t *)handle;
     rtc->media_provider = *provider;
-    // Temp use esp_codec_dev as simple player
     rtc->play_handle = provider->player;
     return ESP_PEER_ERR_NONE;
 }

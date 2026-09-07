@@ -255,7 +255,7 @@ static void thread_scheduler(const char *thread_name, media_lib_thread_cfg_t *sc
         schedule_cfg->priority = 18;
         schedule_cfg->core_id = 1;
     }
-    if (strcmp(thread_name, "start") == 0) {
+    if (strcmp(thread_name, "start") == 0 || strcmp(thread_name, "leave") == 0) {
         schedule_cfg->stack_size = 6 * 1024;
     }
 }
