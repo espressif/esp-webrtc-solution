@@ -10,7 +10,7 @@ All Agora-specific code is contained in this directory. The shared
 ## Prerequisites
 
 - An official ESP32-S3-Korvo V2 board.
-- ESP-IDF 5.4 or newer.
+- ESP-IDF 5.4.4 or newer.
 - One USB connection to the POWER socket and one to the UART socket.
 - A 2.4 GHz Wi-Fi network reachable by the board.
 - An Agora account and project.
@@ -22,15 +22,19 @@ authentication mode before building the firmware.
 
 ## Configure Agora authentication and Wi-Fi
 
-Install and activate ESP-IDF 5.4 or newer by following the
-[ESP-IDF setup guide](https://docs.espressif.com/projects/esp-idf/en/v5.4.2/esp32s3/get-started/index.html),
-then open the project configuration from the repository root:
+Install and activate ESP-IDF 5.4.4 or newer by following the
+[ESP-IDF setup guide](https://docs.espressif.com/projects/esp-idf/en/v5.4.4/esp32s3/get-started/index.html),
+then install the ESP Board Manager helper and select the Korvo board profile:
 
 ```bash
 cd solutions/agora_demo
-idf.py set-target esp32s3
+python -m pip install --upgrade esp-bmgr-assist
+idf.py gen-bmgr-config -b esp32_s3_korvo_2_3
 idf.py menuconfig
 ```
+
+Use `idf.py gen-bmgr-config -l` to list the board profiles available in the
+installed Board Manager package.
 
 Under **Agora duplex WHIP demo**, configure:
 
@@ -57,8 +61,9 @@ wifi <ssid> [password]
 
 ## Build and flash
 
-The default board selection is `S3_Korvo_V2`, provided by the unchanged
-upstream `codec_board` component. No third-party board files are required.
+The `esp32_s3_korvo_2_3` Board Manager profile configures the official
+ESP32-S3-Korvo-2 V3.1 audio ADC, audio DAC, and ESP32-S3 target. No
+third-party board files are required.
 
 Build the firmware:
 
@@ -82,7 +87,7 @@ with `Ctrl+]`.
 A successful startup includes these log stages:
 
 ```text
-Codec ready: board=S3_Korvo_V2
+Audio ADC and DAC are ready
 Opus media ready: 48000 Hz mono
 Starting channel=<channel> uid=<uid>
 POST duplex offer endpoint=<base>/pub/<channel>?Uid=<uid>&duplex=true

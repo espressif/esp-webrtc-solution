@@ -9,7 +9,6 @@ idf_component_register(
     INCLUDE_DIRS "."
     REQUIRES
         av_render
-        codec_board
         common
         console
         esp_event
@@ -18,6 +17,7 @@ idf_component_register(
         esp_webrtc
         esp_wifi
         espressif__esp_audio_codec
+        espressif__esp_board_manager
         espressif__esp_capture
         espressif__esp_codec_dev
         mbedtls

@@ -4,9 +4,10 @@
 
 #include "av_render.h"
 #include "av_render_default.h"
-#include "codec_init.h"
 #include "esp_audio_dec_default.h"
 #include "esp_audio_enc_default.h"
+#include "esp_board_manager_defs.h"
+#include "esp_board_manager_includes.h"
 #include "esp_capture_defaults.h"
 #include "esp_log.h"
 #include "settings.h"
@@ -19,13 +20,45 @@ static esp_capture_handle_t capture;
 static esp_capture_audio_src_if_t *audio_source;
 static av_render_handle_t player;
 
+static esp_codec_dev_handle_t get_record_handle(void)
+{
+    dev_audio_codec_handles_t *codec_handle = NULL;
+    esp_err_t ret = esp_board_device_get_handle(
+        ESP_BOARD_DEVICE_NAME_AUDIO_ADC, (void **)&codec_handle);
+    if (ret != ESP_OK || codec_handle == NULL ||
+        codec_handle->codec_dev == NULL) {
+        ESP_LOGE(TAG, "Failed to get audio ADC handle");
+        return NULL;
+    }
+    esp_codec_dev_set_in_gain(codec_handle->codec_dev, 32);
+    return codec_handle->codec_dev;
+}
+
+static esp_codec_dev_handle_t get_playback_handle(void)
+{
+    dev_audio_codec_handles_t *codec_handle = NULL;
+    esp_err_t ret = esp_board_device_get_handle(
+        ESP_BOARD_DEVICE_NAME_AUDIO_DAC, (void **)&codec_handle);
+    if (ret != ESP_OK || codec_handle == NULL ||
+        codec_handle->codec_dev == NULL) {
+        ESP_LOGE(TAG, "Failed to get audio DAC handle");
+        return NULL;
+    }
+    esp_codec_dev_set_out_vol(codec_handle->codec_dev, 70);
+    return codec_handle->codec_dev;
+}
+
 int media_sys_buildup(void)
 {
     esp_audio_enc_register_default();
     esp_audio_dec_register_default();
 
+    esp_codec_dev_handle_t record_handle = get_record_handle();
+    if (record_handle == NULL) {
+        return -1;
+    }
     esp_capture_audio_dev_src_cfg_t source_cfg = {
-        .record_handle = get_record_handle(),
+        .record_handle = record_handle,
     };
     audio_source = esp_capture_new_audio_dev_src(&source_cfg);
     if (audio_source == NULL) {
@@ -44,9 +77,13 @@ int media_sys_buildup(void)
         return -1;
     }
 
+    esp_codec_dev_handle_t playback_handle = get_playback_handle();
+    if (playback_handle == NULL) {
+        return -1;
+    }
     i2s_render_cfg_t render_cfg = {
         .fixed_clock = true,
-        .play_handle = get_playback_handle(),
+        .play_handle = playback_handle,
     };
     audio_render_handle_t audio_render =
         av_render_alloc_i2s_render(&render_cfg);

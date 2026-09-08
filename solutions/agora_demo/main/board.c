@@ -1,28 +1,27 @@
 #include "common.h"
 
-#include "codec_board.h"
-#include "codec_init.h"
+#include "esp_board_manager.h"
+#include "esp_board_manager_defs.h"
 #include "esp_log.h"
-#include "sdkconfig.h"
 
 #define TAG "AGORA_BOARD"
 
 int init_board(void)
 {
-    set_codec_board_type(CONFIG_CODEC_BOARD);
-
-    codec_init_cfg_t cfg = {
-        .reuse_dev = false,
-    };
-    int ret = init_codec(&cfg);
-    if (ret != 0 || get_record_handle() == NULL ||
-        get_playback_handle() == NULL) {
-        ESP_LOGE(TAG, "Codec initialization failed for board=%s ret=%d",
-                 CONFIG_CODEC_BOARD, ret);
+    esp_err_t ret = esp_board_device_init(ESP_BOARD_DEVICE_NAME_AUDIO_ADC);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize audio ADC: %s",
+                 esp_err_to_name(ret));
         return -1;
     }
 
-    ESP_LOGI(TAG, "Codec ready: board=%s record=%p playback=%p",
-             CONFIG_CODEC_BOARD, get_record_handle(), get_playback_handle());
+    ret = esp_board_device_init(ESP_BOARD_DEVICE_NAME_AUDIO_DAC);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize audio DAC: %s",
+                 esp_err_to_name(ret));
+        return -1;
+    }
+
+    ESP_LOGI(TAG, "Audio ADC and DAC are ready");
     return 0;
 }
