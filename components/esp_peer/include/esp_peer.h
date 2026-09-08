@@ -57,6 +57,28 @@ typedef enum {
 } esp_peer_audio_codec_t;
 
 /**
+ * @brief  Advertised codec capability mask
+ *
+ * @note  0 keeps the old single-codec path (`audio_info` / `video_info` only).
+ *        Non-zero bits list extra codecs in SDP so send and receive can differ.
+ *        Send payload still follows `audio_info.codec` / `video_info.codec`.
+ *        `on_audio_info` / `on_video_info` fire at SDP parse when only one
+ *        codec is accepted; if several remain, they wait for the first RTP PT.
+ */
+typedef uint8_t esp_peer_codec_caps_t;
+
+#define ESP_PEER_CAPS_AUD_G711A  (1u << 0) /*!< PCMA */
+#define ESP_PEER_CAPS_AUD_G711U  (1u << 1) /*!< PCMU */
+#define ESP_PEER_CAPS_AUD_OPUS   (1u << 2) /*!< Opus */
+#define ESP_PEER_CAPS_VID_H264   (1u << 3) /*!< H264 */
+#define ESP_PEER_CAPS_VID_MJPEG  (1u << 4) /*!< JPEG / MJPEG */
+
+#define ESP_PEER_CAPS_AUD_ALL \
+    (ESP_PEER_CAPS_AUD_G711A | ESP_PEER_CAPS_AUD_G711U | ESP_PEER_CAPS_AUD_OPUS)
+#define ESP_PEER_CAPS_VID_ALL \
+    (ESP_PEER_CAPS_VID_H264 | ESP_PEER_CAPS_VID_MJPEG)
+
+/**
  * @brief  Data channel type
  */
 typedef enum {
@@ -187,6 +209,26 @@ typedef enum {
 } esp_peer_rtp_transform_role_t;
 
 /**
+ * @brief  TWCC bitrate report (transport-wide congestion control)
+ */
+typedef struct {
+    uint32_t sent_size;      /**< Bytes sent in this TWCC report */
+    uint32_t recved_size;    /**< Bytes reported as received */
+    uint16_t sent_packets;   /**< Packets covered by this report */
+    uint16_t recv_packets;   /**< Packets reported as received */
+    uint32_t recv_bitrate;   /**< Smoothed received bitrate (bps) */
+    float    lost_ratio;     /**< Lost packet ratio in this report */
+} esp_peer_twcc_report_t;
+
+/**
+ * @brief  REMB report (Receiver Estimated Maximum Bitrate, draft-alvestrand-rmcat-remb)
+ */
+typedef struct {
+    uint32_t bitrate; /*!< Receiver estimated max bitrate (bps) */
+    uint32_t ssrc;    /*!< First media SSRC in the REMB (0 if none) */
+} esp_peer_remb_report_t;
+
+/**
  * @brief  Peer handle
  */
 typedef void *esp_peer_handle_t;
@@ -199,8 +241,9 @@ typedef struct {
     uint8_t                      server_num;          /*!< Number of ICE server */
     esp_peer_role_t              role;                /*!< Peer role */
     esp_peer_ice_trans_policy_t  ice_trans_policy;    /*!< ICE transport policy */
-    esp_peer_audio_stream_info_t audio_info;          /*!< Audio stream information */
-    esp_peer_video_stream_info_t video_info;          /*!< Video stream information */
+    esp_peer_audio_stream_info_t audio_info;          /*!< Audio codec; required if audio_dir != NONE (incl. recvonly) */
+    esp_peer_video_stream_info_t video_info;          /*!< Video codec; required if video_dir != NONE (incl. recvonly) */
+    esp_peer_codec_caps_t        codec_caps;          /*!< Optional, supported codecs send in SDP, 0 = single send codec */
     esp_peer_media_dir_t         audio_dir;           /*!< Audio transmission direction */
     esp_peer_media_dir_t         video_dir;           /*!< Video transmission direction */
     bool                         no_auto_reconnect;   /*!< Disable auto reconnect if connected fail */
@@ -285,6 +328,30 @@ typedef struct {
      * @return          Status code indicating success or failure.
      */
     int (*on_channel_close)(esp_peer_data_channel_info_t *ch, void *ctx);
+
+    /**
+     * @brief  TWCC bitrate report callback
+     *
+     * @note  Fired when a TWCC feedback packet is received and bitrate is estimated.
+     *        Application can adapt audio/video bitrate from `lost_ratio` and `recv_bitrate`.
+     *
+     * @param[in]  report  TWCC report
+     * @param[in]  ctx     User context
+     * @return             Status code indicating success or failure.
+     */
+    int (*on_twcc)(esp_peer_twcc_report_t *report, void *ctx);
+
+    /**
+     * @brief  REMB bitrate callback
+     *
+     * @note  Fired when an RTCP PSFB goog-remb packet is received.
+     *        Application can cap encoder bitrate from `bitrate`.
+     *
+     * @param[in]  report  REMB report
+     * @param[in]  ctx     User context
+     * @return             Status code indicating success or failure.
+     */
+    int (*on_remb)(esp_peer_remb_report_t *report, void *ctx);
 } esp_peer_cfg_t;
 
 /**

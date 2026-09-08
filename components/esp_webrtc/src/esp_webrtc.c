@@ -733,6 +733,18 @@ static int pc_on_channel_close(esp_peer_data_channel_info_t *ch, void *ctx)
     return 0;
 }
 
+static int pc_on_twcc(esp_peer_twcc_report_t *report, void *ctx)
+{
+    printf("TWCC report: lost_ratio %f recv_bitrate %d\n", report->lost_ratio, (int)report->recv_bitrate);
+    return 0;
+}
+
+static int pc_on_remb(esp_peer_remb_report_t *report, void *ctx)
+{
+    printf("REMB report: bitrate %d\n", (int)report->bitrate);
+    return 0;
+}
+
 static int pc_apply_capture_pre_setting(webrtc_t *rtc, uint16_t set_mask)
 {
     if (rtc->capture_path == NULL) {
@@ -758,6 +770,7 @@ static int pc_start(webrtc_t *rtc, esp_peer_ice_server_cfg_t *server_info, int s
         .server_lists = server_info,
         .server_num = server_num,
         .ice_trans_policy = rtc->rtc_cfg.peer_cfg.ice_trans_policy,
+        .codec_caps = rtc->rtc_cfg.peer_cfg.codec_caps,
         .audio_dir = rtc->rtc_cfg.peer_cfg.audio_dir,
         .video_dir = rtc->rtc_cfg.peer_cfg.video_dir,
         .enable_data_channel = rtc->rtc_cfg.peer_cfg.enable_data_channel,
@@ -774,6 +787,8 @@ static int pc_start(webrtc_t *rtc, esp_peer_ice_server_cfg_t *server_info, int s
         .on_channel_open = pc_on_channel_open,
         .on_channel_close = pc_on_channel_close,
         .on_data = pc_on_data,
+        .on_twcc = pc_on_twcc,
+        .on_remb = pc_on_remb,
         .role = rtc->ice_role,
         .ctx = rtc,
     };

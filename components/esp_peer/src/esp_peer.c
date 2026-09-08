@@ -220,3 +220,19 @@ int esp_peer_pre_generate_cert(void)
     return ret == 0 ? ESP_PEER_ERR_NONE : ESP_PEER_ERR_FAIL;
 }
 
+int WEAK peer_default_set_peer_prefer_codec(esp_peer_handle_t handle, esp_peer_codec_caps_t codec_caps)
+{
+    (void)handle;
+    (void)codec_caps;
+    return ESP_PEER_ERR_NOT_SUPPORT;
+}
+
+int esp_peer_set_peer_prefer_codec(esp_peer_handle_t handle, esp_peer_codec_caps_t codec_caps)
+{
+    if (handle == NULL) {
+        return ESP_PEER_ERR_INVALID_ARG;
+    }
+    peer_wrapper_t *w = (peer_wrapper_t *)handle;
+    return peer_default_set_peer_prefer_codec(w->handle, codec_caps);
+}
+

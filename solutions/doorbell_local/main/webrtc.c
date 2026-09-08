@@ -85,6 +85,8 @@ static rtp_transformer_ctx_t sender_transformer_ctx;
 static rtp_transformer_ctx_t receiver_transformer_ctx;
 static bool rtp_transformer_enabled = false;
 
+int esp_peer_set_peer_prefer_codec(esp_peer_handle_t handle, esp_peer_codec_caps_t codec_caps);
+
 static int play_tone(door_bell_tone_type_t type)
 {
     door_bell_tone_data_t tone_data[] = {
@@ -149,6 +151,11 @@ static int door_bell_on_cmd(esp_webrtc_custom_data_via_t via, uint8_t *data, int
     } else if (SAME_STR(cmd, DOOR_BELL_CALL_ACCEPTED_CMD)) {
         door_bell_change_state(DOOR_BELL_STATE_CONNECTING);
         esp_webrtc_enable_peer_connection(webrtc, true);
+#ifdef DOOR_BELL_PREFER_RECV_OPUS
+        esp_peer_handle_t peer_handle = NULL;
+        esp_webrtc_get_peer_connection(webrtc, &peer_handle);
+        esp_peer_set_peer_prefer_codec(peer_handle, ESP_PEER_CAPS_AUD_OPUS);
+#endif
     } else if (SAME_STR(cmd, DOOR_BELL_CALL_DENIED_CMD)) {
         esp_webrtc_enable_peer_connection(webrtc, false);
         door_bell_change_state(DOOR_BELL_STATE_NONE);
@@ -539,7 +546,15 @@ int start_webrtc(char *url)
 
     esp_peer_default_cfg_t peer_cfg = {
         .agent_recv_timeout = 500,
+        .twcc_cfg = {
+            .enable = true,
+        },
     };
+    uint8_t codec_caps = 0;
+#ifdef DOOR_BELL_PREFER_RECV_OPUS
+    codec_caps |= ESP_PEER_CAPS_AUD_OPUS | ESP_PEER_CAPS_AUD_G711A;
+#endif
+
     esp_webrtc_cfg_t cfg = {
         .peer_cfg = {
             .audio_info = {
@@ -559,6 +574,7 @@ int start_webrtc(char *url)
                 .height = VIDEO_HEIGHT,
                 .fps = VIDEO_FPS,
             },
+            .codec_caps = codec_caps,
             .audio_dir = ESP_PEER_MEDIA_DIR_SEND_RECV,
             .video_dir = ESP_PEER_MEDIA_DIR_SEND_ONLY,
             .on_custom_data = door_bell_on_cmd,
