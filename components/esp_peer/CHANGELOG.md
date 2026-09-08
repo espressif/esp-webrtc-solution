@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.5.5
+
+### Features
+
+- Added `REMB` RTCP receiver parser and report (no sending `REMB` report to peer)
+  - Parser enabled if `on_remb` callback is set
+- Added `TWCC` support, both report generate for sender and parsing for receiver
+  - User need manually enable `TWCC` use `esp_peer_default_twcc_cfg_t.enable`
+  - Can configuration the `TWCC` sending period and control its history cache
+- Added support for multiple audio and video codecs through `esp_peer_cfg_t.codec_caps`
+  - If not set (default), in SDP only send the codec set in audio/video info
+  - If set, when offer SDP, send all codecs that supported by the codec capabilities,
+    When answer SDP, only answer the supported ones in peer codec lists
+- Added `MJPEG` through RTP support follow RFC2435 (not supported by browser yet)
+  - Used for video call by 2 peers, low cpu consume than JPEG over data channel
+
 ## v1.5.4
 
 ### Features

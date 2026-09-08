@@ -79,6 +79,8 @@ extern "C" {
 #define DOOR_BELL_RING_BUTTON  5
 #endif
 
+#define DOOR_BELL_PREFER_RECV_OPUS
+
 #ifdef __cplusplus
 }
 #endif

@@ -55,6 +55,18 @@ typedef struct {
 } esp_peer_default_rtp_cfg_t;
 
 /**
+ * @brief  Peer default transport-wide congestion control configuration
+ */
+typedef struct {
+    bool     enable;        /*!< Enable TWCC. Extra send/receive maps are allocated only when enabled.
+                                 Default: off. */
+    uint16_t send_period;   /*!< Period to send TWCC RTCP feedback (unit ms).
+                                 Default: 200ms if set to 0. */
+    uint16_t history_size;  /*!< Send/receive history entry count. Must be a power of two from 32 to 32768.
+                                 Default: 256 entries if set to 0. */
+} esp_peer_default_twcc_cfg_t;
+
+/**
  * @brief  Peer default configuration (optional)
  */
 typedef struct {
@@ -80,7 +92,9 @@ typedef struct {
     bool                          insecure_skip_turn_cert_verify; /*!< INSECURE: skip TURNS (TURN-over-TLS) server certificate
                                                                        verification. Only enable for lab/testing against a TURN server
                                                                        with a self-signed certificate. On ESP targets this additionally
-                                                                       requires CONFIG_ESP_TLS_INSECURE=y and CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY=y in sdkconfig. */
+                                                               requires CONFIG_ESP_TLS_INSECURE=y and
+                                                               CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY=y in sdkconfig. */
+    esp_peer_default_twcc_cfg_t   twcc_cfg;              /*!< Transport-wide congestion control configuration */
 } esp_peer_default_cfg_t;
 
 /**

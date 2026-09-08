@@ -196,6 +196,20 @@ static int build_player_system()
         ESP_LOGE(TAG, "Fail to create player");
         return -1;
     }
+#if 1
+    esp_codec_dev_sample_info_t fs = {
+        .sample_rate = 8000,
+        .channel = 2,
+        .bits_per_sample = 16,
+    };
+    av_render_audio_frame_info_t fixed_info = {
+        .sample_rate = 8000,
+        .channel = 2,
+        .bits_per_sample = 16,
+    };
+    av_render_set_fixed_frame_info(player_sys.player, &fixed_info);
+    esp_codec_dev_open(get_playback_handle(), &fs);
+#endif
     return 0;
 }
 
