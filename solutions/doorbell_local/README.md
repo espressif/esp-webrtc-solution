@@ -74,6 +74,31 @@ idf.py -p YOUR_SERIAL_DEVICE flash monitor
 For how to customize a board with `esp_board_manager`, see [custom-board](https://github.com/espressif/esp-board-manager/tree/main/esp_board_manager#custom-board).
 
 
+### USB camera support
+
+USB camera (UVC) support is enabled by default. Frames from a USB camera are processed and then sent over WebRTC as follows:
+
+- **H.264 input:** passed through without re-encoding (resolution and fps matches)
+- **JPEG input:** decoded, then re-encoded as H.264 before sending (ESP32-P4 only)
+- **Resolution change:** can be scaled with PPA (ESP32-P4 only)
+
+Default options enabled for this feature:
+
+```
+CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=1024
+CONFIG_ESP_VIDEO_ENABLE_USB_UVC_VIDEO_DEVICE=y
+CONFIG_ESP_CAPTURE_ENABLE_VIDEO_DECODER=y
+```
+
+For better performance, enable these PSRAM and cache settings:
+
+```
+CONFIG_SPIRAM_SPEED_250M=y
+CONFIG_CACHE_L2_CACHE_LINE_128B=y
+```
+
+If `CONFIG_ESP_VIDEO_ENABLE_USB_UVC_VIDEO_DEVICE` is enabled but no USB camera is connected, the demo falls back to the board’s built-in camera.
+
 ## Testing
 
 After the board boots, it will connect to the configured Wi-Fi. To switch to a different Wi-Fi network dynamically, use the CLI:

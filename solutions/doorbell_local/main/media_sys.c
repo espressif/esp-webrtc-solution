@@ -55,9 +55,50 @@ static int            music_duration;
 
 static esp_capture_video_src_if_t *create_video_source(void)
 {
+    esp_err_t ret = 0;
+#ifdef CONFIG_ESP_VIDEO_ENABLE_USB_UVC_VIDEO_DEVICE
+    const esp_video_init_usb_uvc_config_t uvc_config = {
+        .uvc = {
+            .uvc_dev_num   = 1,
+            .task_stack    = 8192,
+            .task_priority = 15,
+            .task_affinity = 0,
+        },
+        .usb = {
+            .init_usb_host_lib = true,
+            .peripheral_map    = 0,
+            .task_stack        = 8192,
+            .task_priority     = 15,
+            .task_affinity     = 0,
+        },
+    };
+    esp_video_init_config_t cam_config = {
+        .usb_uvc = &uvc_config,
+    };
+    ret = esp_video_init_with_flags(&cam_config, ESP_VIDEO_INIT_FLAGS_USB_UVC);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "UVC camera init failed: %s fallback to board camera", esp_err_to_name(ret));
+        // Continue to use board carried V4L2 camera
+    } else {
+        esp_capture_video_v4l2_src_cfg_t v4l2_cfg = {
+            .buf_count = 3,
+        };
+        strncpy(v4l2_cfg.dev_name, "/dev/video40", sizeof(v4l2_cfg.dev_name) - 1);
+        esp_capture_video_src_if_t *vid_src = esp_capture_new_video_v4l2_src(&v4l2_cfg);
+        if (vid_src) {
+            if (vid_src->open(vid_src) == ESP_OK) {
+                vid_src->close(vid_src);
+                return vid_src;
+            }
+            ESP_LOGW(TAG, "Open UVC camera failed, fallback to board camera");
+            free(vid_src);
+        }
+    }
+#endif
+
 #ifdef CONFIG_ESP_BOARD_DEV_CAMERA_SUPPORT
     dev_camera_handle_t *camera_handle = NULL;
-    esp_err_t ret = esp_board_device_get_handle(ESP_BOARD_DEVICE_NAME_CAMERA, (void **)&camera_handle);
+    ret = esp_board_device_get_handle(ESP_BOARD_DEVICE_NAME_CAMERA, (void **)&camera_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to get camera device");
         return NULL;
@@ -99,7 +140,7 @@ static int build_capture_system(void)
 {
     capture_sys.vid_src = create_video_source();
     RET_ON_NULL(capture_sys.vid_src, -1);
-#if CONFIG_IDF_TARGET_ESP32P4
+#if CONFIG_IDF_TARGET_ESP32P4 && !CONFIG_ESP_VIDEO_ENABLE_USB_UVC_VIDEO_DEVICE
     capture_sys.vid_src->set_fixed_caps(capture_sys.vid_src, &(esp_capture_video_info_t){
         .format_id = ESP_CAPTURE_FMT_ID_O_UYY_E_VYY,
         .width = VIDEO_WIDTH,
@@ -119,6 +160,9 @@ static int build_capture_system(void)
         .audio_src = capture_sys.aud_src,
         .video_src = capture_sys.vid_src,
     };
+#if CONFIG_ESP_VIDEO_ENABLE_USB_UVC_VIDEO_DEVICE
+    cfg.full_speed_decode = true;
+#endif
     esp_capture_open(&cfg, &capture_sys.capture_handle);
     return 0;
 }
