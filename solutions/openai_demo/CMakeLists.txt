@@ -14,3 +14,8 @@ endif()
 add_compile_definitions(OPENAI_API_KEY="$ENV{OPENAI_API_KEY}")
 
 project(openai_demo)
+
+# esp_asrc 1.0.1 uses a signed format specifier for allocation sizes. Keep the
+# workaround scoped to that managed component until the registry release fixes it.
+idf_component_get_property(esp_asrc_lib espressif__esp_asrc COMPONENT_LIB)
+target_compile_options(${esp_asrc_lib} PRIVATE -Wno-error=format)
