@@ -6,12 +6,14 @@ idf_component_register(
         "webrtc.c"
         "agora_auth.c"
         "agora_signaling.c"
+        "bot_station.c"
     INCLUDE_DIRS "."
     REQUIRES
         av_render
         common
         console
         esp_event
+        esp_app_format
         esp_http_client
         esp_timer
         esp_webrtc
@@ -22,5 +24,6 @@ idf_component_register(
         espressif__esp_codec_dev
         mbedtls
         nvs_flash
+        json
         webrtc_utils
 )

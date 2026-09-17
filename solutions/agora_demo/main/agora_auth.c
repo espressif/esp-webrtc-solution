@@ -101,11 +101,12 @@ static int url_encode_path_segment(const char *input, char *output,
     return 0;
 }
 
-int agora_auth_create_session(const char *channel, uint32_t uid,
+int agora_auth_create_session(const char *channel, const char *string_uid,
                               char *url, size_t url_size,
                               char *token, size_t token_size)
 {
-    if (channel == NULL || channel[0] == '\0' || uid == 0 ||
+    if (channel == NULL || channel[0] == '\0' ||
+        string_uid == NULL || string_uid[0] == '\0' ||
         url == NULL || token == NULL || url_size == 0 || token_size == 0) {
         return -1;
     }
@@ -123,9 +124,12 @@ int agora_auth_create_session(const char *channel, uint32_t uid,
     }
 
     char encoded_channel[AGORA_DEMO_CHANNEL_SIZE * 3 + 1];
+    char encoded_uid[AGORA_DEMO_UID_SIZE * 3 + 1];
     if (url_encode_path_segment(channel, encoded_channel,
-                                sizeof(encoded_channel)) != 0) {
-        ESP_LOGE(TAG, "Channel is too long for the WHIP URL");
+                                sizeof(encoded_channel)) != 0 ||
+        url_encode_path_segment(string_uid, encoded_uid,
+                                sizeof(encoded_uid)) != 0) {
+        ESP_LOGE(TAG, "Channel or UID is too long for the WHIP URL");
         return -1;
     }
 
@@ -134,9 +138,9 @@ int agora_auth_create_session(const char *channel, uint32_t uid,
         --base_size;
     }
     int written = snprintf(url, url_size,
-                           "%.*s/pub/%s?Uid=%" PRIu32 "&duplex=true",
+                           "%.*s/pub/%s?stringuid=%s&duplex=true",
                            (int)base_size, AGORA_DEMO_WHIP_BASE_URL,
-                           encoded_channel, uid);
+                           encoded_channel, encoded_uid);
     if (written < 0 || (size_t)written >= url_size) {
         ESP_LOGE(TAG, "WHIP URL buffer is too small");
         return -1;
@@ -155,10 +159,10 @@ int agora_auth_create_session(const char *channel, uint32_t uid,
     char payload[896];
     written = snprintf(payload, sizeof(payload),
                        "{\"version\":\"1.0\",\"appID\":\"%s\","
-                       "\"streamID\":\"%s\",\"uid\":\"%" PRIu32 "\","
+                       "\"streamID\":\"%s\","
                        "\"exp\":%" PRId64 ",\"action\":\"pub\","
                        "\"enableSubAuth\":true}",
-                       escaped_app_id, escaped_channel, uid, expires_at);
+                       escaped_app_id, escaped_channel, expires_at);
     if (written < 0 || (size_t)written >= sizeof(payload)) {
         ESP_LOGE(TAG, "JWT payload buffer is too small");
         return -1;
@@ -207,7 +211,7 @@ int agora_auth_create_session(const char *channel, uint32_t uid,
         return -1;
     }
 
-    ESP_LOGI(TAG, "Created WHIP credential channel=%s uid=%" PRIu32
-             " exp=%" PRId64, channel, uid, expires_at);
+    ESP_LOGI(TAG, "Created WHIP credential channel=%s string_uid=%s"
+             " exp=%" PRId64, channel, string_uid, expires_at);
     return 0;
 }

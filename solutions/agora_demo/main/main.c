@@ -5,11 +5,12 @@
 #include <time.h>
 
 #include "agora_auth.h"
+#include "bot_station.h"
 #include "common.h"
 #include "esp_console.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "esp_capture.h"
@@ -21,10 +22,12 @@
 #define WIFI_RETRY_INTERVAL_US (5LL * 1000 * 1000)
 #define WIFI_IP_TIMEOUT_US (15LL * 1000 * 1000)
 #define SESSION_RETRY_INTERVAL_US (5LL * 1000 * 1000)
+#define SESSION_TASK_STACK_SIZE (16 * 1024)
+#define SESSION_TASK_PRIORITY 10
+#define SESSION_TASK_CORE 0
 
 static char session_url[AGORA_DEMO_URL_SIZE];
 static char session_token[AGORA_DEMO_TOKEN_SIZE];
-static char session_channel[AGORA_DEMO_CHANNEL_SIZE];
 static volatile bool auto_start = true;
 static volatile bool session_starting;
 
@@ -45,8 +48,6 @@ static void thread_scheduler(const char *name, media_lib_thread_cfg_t *cfg)
         cfg->stack_size = 25 * 1024;
         cfg->priority = 18;
         cfg->core_id = 1;
-    } else if (strcmp(name, "start") == 0) {
-        cfg->stack_size = 16 * 1024;
     }
 }
 
@@ -65,28 +66,8 @@ static void capture_scheduler(const char *name,
     cfg->core_id = thread_cfg.core_id;
 }
 
-static uint32_t create_uid(void)
-{
-    uint32_t uid;
-    do {
-        uid = esp_random() & 0x7fffffffU;
-    } while (uid == 0);
-    return uid;
-}
-
 static int create_and_start_session(void)
 {
-    if (AGORA_DEMO_CHANNEL_NAME[0] == '\0') {
-        ESP_LOGE(TAG, "Configure an Agora channel name");
-        return -1;
-    }
-    int written = snprintf(session_channel, sizeof(session_channel), "%s",
-                           AGORA_DEMO_CHANNEL_NAME);
-    if (written < 0 || (size_t)written >= sizeof(session_channel)) {
-        ESP_LOGE(TAG, "Configured channel name is too long");
-        return -1;
-    }
-
     static bool sntp_initialized;
     if (!sntp_initialized) {
         if (webrtc_utils_time_sync_init() != ESP_OK) {
@@ -101,16 +82,30 @@ static int create_and_start_session(void)
         return -1;
     }
 
-    uint32_t uid = create_uid();
-    ESP_LOGI(TAG, "Starting channel=%s uid=%lu",
-             session_channel, (unsigned long)uid);
-    if (agora_auth_create_session(session_channel, uid,
+    bot_station_conversation_t conversation;
+    esp_err_t ret = bot_station_start_conversation(&conversation);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Bot Station conversation start failed: %s",
+                 esp_err_to_name(ret));
+        return -1;
+    }
+
+    ESP_LOGI(TAG,
+             "Starting assigned channel=%s device_uid=%s agent_uid=%s",
+             conversation.channel, conversation.uid, conversation.agent_uid);
+    ESP_LOGI(TAG, "WHIP string_uid=%s", conversation.uid);
+    if (agora_auth_create_session(conversation.channel, conversation.uid,
                                   session_url, sizeof(session_url),
                                   session_token,
                                   sizeof(session_token)) != 0) {
+        bot_station_stop_conversation("error");
         return -1;
     }
-    return start_webrtc(session_url, session_token);
+    int start_ret = start_webrtc(session_url, session_token);
+    if (start_ret != 0) {
+        bot_station_stop_conversation("error");
+    }
+    return start_ret;
 }
 
 static void session_start_task(void *argument)
@@ -129,15 +124,36 @@ static bool start_session_async(void)
     if (session_starting || !network_is_connected()) {
         return false;
     }
+    bot_station_prepare_start();
     session_starting = true;
-    int ret = media_lib_thread_create_from_scheduler(
-        NULL, "start", session_start_task, NULL);
-    if (ret != 0) {
+    BaseType_t ret = xTaskCreatePinnedToCoreWithCaps(
+        session_start_task, "start", SESSION_TASK_STACK_SIZE, NULL,
+        SESSION_TASK_PRIORITY, NULL, SESSION_TASK_CORE,
+        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (ret != pdPASS) {
         session_starting = false;
-        ESP_LOGE(TAG, "Failed to create session task: %d", ret);
+        ESP_LOGE(TAG, "Failed to create internal-RAM session task: %d",
+                 (int)ret);
         return false;
     }
     return true;
+}
+
+static int stop_active_session(const char *reason)
+{
+    bot_station_cancel();
+    int ret = stop_webrtc();
+    if (network_is_connected()) {
+        esp_err_t stop_ret = bot_station_stop_conversation(reason);
+        if (stop_ret != ESP_OK) {
+            ESP_LOGW(TAG, "Bot Station stop deferred: %s",
+                     esp_err_to_name(stop_ret));
+            ret = -1;
+        }
+    } else if (bot_station_has_active_conversation()) {
+        ESP_LOGW(TAG, "Bot Station stop deferred until network recovery");
+    }
+    return ret;
 }
 
 static int start_command(int argc, char **argv)
@@ -145,7 +161,10 @@ static int start_command(int argc, char **argv)
     (void)argc;
     (void)argv;
     auto_start = true;
-    stop_webrtc();
+    stop_active_session("device_hangup");
+    if (session_starting) {
+        return 0;
+    }
     return start_session_async() ? 0 : -1;
 }
 
@@ -154,7 +173,21 @@ static int stop_command(int argc, char **argv)
     (void)argc;
     (void)argv;
     auto_start = false;
-    return stop_webrtc();
+    return stop_active_session("device_hangup");
+}
+
+static int reset_pairing_command(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    auto_start = false;
+    stop_active_session("device_hangup");
+    esp_err_t ret = bot_station_clear_binding();
+    auto_start = true;
+    if (!session_starting && network_is_connected()) {
+        start_session_async();
+    }
+    return ret == ESP_OK ? 0 : -1;
 }
 
 static int info_command(int argc, char **argv)
@@ -162,6 +195,8 @@ static int info_command(int argc, char **argv)
     (void)argc;
     (void)argv;
     sys_state_show();
+    query_webrtc();
+    media_sys_query();
     return 0;
 }
 
@@ -205,6 +240,9 @@ static int init_console(void)
          .func = start_command},
         {.command = "stop", .help = "Stop automatic session handling",
          .func = stop_command},
+        {.command = "reset-pairing",
+         .help = "Clear the local Bot Station credential and pair again",
+         .func = reset_pairing_command},
         {.command = "i", .help = "Show system status",
          .func = info_command},
         {.command = "wifi", .help = "wifi <ssid> [password]",
@@ -237,16 +275,22 @@ void app_main(void)
     init_console();
     network_init(AGORA_DEMO_WIFI_SSID, AGORA_DEMO_WIFI_PASSWORD,
                  network_event_handler);
+    if (bot_station_init() != ESP_OK) {
+        ESP_LOGE(TAG, "Bot Station initialization failed");
+        return;
+    }
 
     int64_t next_wifi_retry_us =
         esp_timer_get_time() + WIFI_RETRY_INTERVAL_US;
     int64_t next_session_retry_us = 0;
+    int64_t next_stop_retry_us = 0;
     int64_t associated_since_us = 0;
 
     while (true) {
         media_lib_thread_sleep(2000);
         int64_t now_us = esp_timer_get_time();
         if (!network_is_connected()) {
+            bot_station_cancel();
             if (!session_starting) {
                 stop_webrtc();
             }
@@ -275,10 +319,30 @@ void app_main(void)
 
         associated_since_us = 0;
         next_wifi_retry_us = now_us + WIFI_RETRY_INTERVAL_US;
+        if (!auto_start) {
+            if (bot_station_has_active_conversation() &&
+                now_us >= next_stop_retry_us) {
+                bot_station_stop_conversation("device_hangup");
+                next_stop_retry_us = now_us + SESSION_RETRY_INTERVAL_US;
+            }
+            continue;
+        }
+        if (!session_starting && bot_station_binding_check_due()) {
+            bool binding_valid = true;
+            esp_err_t ret = bot_station_validate_active_binding(
+                &binding_valid);
+            if (ret == ESP_OK && !binding_valid) {
+                stop_active_session("error");
+                start_session_async();
+                next_session_retry_us =
+                    now_us + SESSION_RETRY_INTERVAL_US;
+                continue;
+            }
+        }
         query_webrtc();
         if (auto_start && !session_starting && webrtc_needs_restart() &&
             now_us >= next_session_retry_us) {
-            stop_webrtc();
+            stop_active_session("error");
             start_session_async();
             next_session_retry_us =
                 now_us + SESSION_RETRY_INTERVAL_US;

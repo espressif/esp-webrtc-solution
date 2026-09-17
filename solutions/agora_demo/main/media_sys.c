@@ -128,6 +128,13 @@ int media_sys_get_provider(esp_webrtc_media_provider_t *provider)
     return 0;
 }
 
+void media_sys_query(void)
+{
+    if (player != NULL) {
+        av_render_query(player);
+    }
+}
+
 int test_capture_to_player(void)
 {
     return -1;
