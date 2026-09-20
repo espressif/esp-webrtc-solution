@@ -1,13 +1,10 @@
 # Agora Bot Station duplex audio demo
 
 This solution connects an official ESP32-S3-Korvo V2 board to an Agora Bot
-Station Agent. The board uses duplex WHIP as its only RTC join path. Bot
+Station Agent. The board uses Agora duplex WHIP as its only RTC join path. Bot
 Station assigns the channel, board string UID, and Agent string UID for each
-conversation; the firmware does not use a fixed channel.
-
-Microphone and speaker audio use Opus, 48 kHz, mono in both directions. Video
-is disabled. All Agora-specific code is contained in this directory, so the
-shared `components/` and other solutions do not need changes.
+conversation; the firmware does not use a fixed channel. Microphone and
+speaker audio use Opus, 48 kHz, mono in both directions.
 
 ## Prerequisites
 
@@ -49,7 +46,7 @@ Under **Agora Bot Station duplex audio demo**, configure:
   deployment. The default is the production endpoint at
   `https://ap-webrtc-whip.ap.sd-rtn.com`.
 - **Bot Station API base URL**: the Device API URL for the same deployment.
-  The default points to the staging Device API.
+  The default is `https://botstation.sh2.agoralab.co/api`.
 - **Bot Station hardware model**: the model reported during pairing. The
   default is suitable for ESP32-S3-Korvo V2.
 - **Wi-Fi SSID**: the 2.4 GHz access point name.
@@ -93,15 +90,6 @@ ID, generates a short-lived WHIP JWT with the configured App Certificate, and
 joins through duplex WHIP. Runtime binding checks detect a remote unbind and
 return the board to pairing.
 
-The duplex WHIP URL carries the Bot Station-assigned RTC account:
-
-```text
-/pub/<channel>?stringuid=<Bot Station UID>&duplex=true
-```
-
-Do not add a numeric `uid` query or a JWT `uid` claim. The production AP
-assigns the numeric routing UID before forwarding the request to vos_web.
-
 To bind the board to a different Agent, unbind it in the Bot Station console,
 then run this UART command:
 
@@ -139,35 +127,123 @@ idf.py -p PORT flash monitor
 Keep both POWER and UART connected while the firmware runs. Exit the monitor
 with `Ctrl+]`.
 
-## Verify
-
-A successful first run includes these stages:
-
-```text
-Audio ADC and DAC are ready
-Opus media ready: 48000 Hz mono
-Bot Station pairing code: <six digits>
-Pairing completed; device credential saved
-Conversation started for the bound agent
-Starting assigned channel=<channel> device_uid=<string uid> agent_uid=<string uid>
-WHIP string_uid=<string uid>
-POST duplex offer endpoint=<endpoint>
-Received SDP answer
-WebRTC ICE pair selected
-WebRTC connected; Opus uplink and downlink enabled
-```
-
-After a reboot, `Persistent Bot Station credential: present` and
-`Restored Bot Station binding from NVS` replace the pairing-code stage.
-
-Use the `i` command to print system, WebRTC, decoder, and renderer statistics.
-Confirm that both sent and received audio counters increase, that the audio
-decoder error count remains zero, and that the audio render PTS advances.
-Then verify microphone and speaker audio with the Agent.
+### UART console commands
 
 The UART console also supports:
 
 - `start`: stop the current conversation and start a new one.
-- `stop`: stop the current conversation and automatic restart.
+- `stop`: stop the current conversation and disable automatic restart.
 - `reset-pairing`: clear only the local Bot Station credential and pair again.
 - `wifi <ssid> [password]`: save new Wi-Fi credentials and reconnect.
+
+## Verify
+
+Keep the UART monitor open while the board starts. Timestamps and assigned
+identifiers vary, but a healthy startup reaches each stage below in order.
+
+The common hardware and network startup is:
+
+```text
+Audio ADC and DAC are ready
+Opus media ready: 48000 Hz mono, 100 ms playout threshold
+wifi_init_sta finished.
+got ip:<address>
+Network connected
+Device ID: AG-<MAC address>
+```
+
+On the first boot, expect the pairing path:
+
+```text
+Persistent Bot Station credential: not present
+/devices/pair-codes returned HTTP 201
+Bot Station pairing code: <six digits>
+Waiting for this device to be claimed
+Pairing pending; next poll in <seconds> seconds
+Pairing completed; device credential saved
+```
+
+`Pairing pending` is normal until the six-digit code is entered in the Bot
+Station console. On later boots, the saved credential takes the shorter path:
+
+```text
+Persistent Bot Station credential: present
+Binding response auth=Device ... status=bound device_id=match
+Runtime binding remains valid
+Restored Bot Station binding from NVS
+```
+
+After either pairing path succeeds, the conversation and WHIP connection
+should produce:
+
+```text
+/devices/AG-<MAC address>/conversations/start returned HTTP 201
+Conversation started for the bound agent
+Starting assigned channel=<channel> device_uid=<uid> agent_uid=<uid>
+WHIP string_uid=<uid>
+Created WHIP credential channel=<channel> string_uid=<uid> exp=<time>
+POST duplex offer endpoint=<URL>
+WebRTC connecting
+POST <URL> returned HTTP 201
+Received SDP answer: <bytes> bytes
+WebRTC ICE pair selected
+WebRTC connected; Opus uplink and downlink enabled
+```
+
+The WHIP POST may return another successful `2xx` status. The decisive
+markers are the SDP answer, selected ICE pair, and connected event.
+
+### Troubleshoot by stage
+
+- **Board and media:** investigate `Failed to initialize audio ADC`,
+  `Failed to initialize audio DAC`, any `Failed to` message from
+  `AGORA_MEDIA`, or `Board or audio initialization failed`. Regenerate the
+  Board Manager config for `esp32_s3_korvo_2_3`, and verify that both POWER
+  and UART are connected.
+
+- **Wi-Fi and time:** repeated `retry to connect to the AP`,
+  `Network disconnected`, or `Wi-Fi has no IP; reconnecting` means the board
+  has not reached the network. Check the 2.4 GHz SSID, password, DHCP, and
+  internet access. `Failed to initialize SNTP`,
+  `SNTP has not supplied a valid time`, or
+  `System time is not synchronized` means JWT creation cannot proceed. Check
+  DNS, internet access, and NTP reachability.
+
+- **Pairing and saved credentials:** investigate
+  `Pair-code request failed`, `Pair-code response is incomplete`,
+  `Binding response is incomplete or inconsistent`,
+  `Bound pairing response omitted device_token`, or NVS save errors. Check
+  the Bot Station API base URL, bind the displayed device ID in the matching
+  Bot Station console, and verify that NVS is writable.
+  `Binding status=expired` or `Binding status=unbound` intentionally returns
+  the device to pairing; enter the newly displayed code.
+
+- **Conversation assignment:** investigate `Conversation start failed`,
+  `Conversation response failed identity validation`, or
+  `Bot Station conversation start failed`. Check that the bound Agent is
+  available and that Bot Station returns the configured App ID, a channel,
+  device UID, Agent UID, and conversation ID.
+
+- **JWT and WHIP request:** investigate
+  `Configure App ID, App Cert, and WHIP base URL`, any JWT error,
+  `POST <URL> failed`, or `WHIP offer failed`. An HTTP `401` or `403` usually
+  indicates an App ID, App Certificate, token, or deployment mismatch. For
+  other `4xx` responses, verify the endpoint and the assigned channel and
+  string UID. A transport error before an HTTP status points to DNS, TLS, or
+  network connectivity.
+
+- **SDP and ICE:** `Peer rejected the SDP answer`, `WebRTC connection failed`,
+  or `Connection timed out; a fresh session is required` after receiving an
+  SDP answer means signaling completed but the peer connection did not.
+  Check the SDP/codec negotiation, ICE server response, firewall, and UDP
+  reachability. `WebRTC disconnected` after a previously healthy connection
+  indicates that the network or remote session ended.
+
+- **Bot-to-board audio:** if WebRTC is connected but `Recv A` remains `[0:0]`
+  while the Agent is speaking, the board is receiving no downlink audio.
+  Check that the Agent joined the logged channel with the logged Agent UID and
+  is publishing Opus audio. If receive counts grow but decoder errors increase
+  or audio render PTS does not advance, inspect codec negotiation and the
+  decoder/render path. If receive counts and render PTS both advance but the
+  speaker is silent, inspect the DAC, speaker connection, output volume, and
+  board audio hardware.
