@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.1
+
+- Fixed audio resample leakage when replay not call `av_render_reset`
+
 ## v1.0.0
 
 - Use `esp_image_effects` to do color convert

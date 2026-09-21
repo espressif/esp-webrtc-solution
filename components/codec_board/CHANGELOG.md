@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.1.0
+
+### Break Change
+
+- Upgrade `esp_codec_dev` version to `2.0.0-beta`
+
 ## v2.0.2
 
 - Fixed LCD init failed due to clk error on IDFv6.x

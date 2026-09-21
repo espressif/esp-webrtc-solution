@@ -16,7 +16,6 @@
 #include "codec_board.h"
 #include "codec_init.h"
 #include "esp_log.h"
-#include "dummy_codec.h"
 #include "driver/i2c_master.h"
 #include "esp_vfs_fat.h"
 #include "driver/sdmmc_host.h"
@@ -340,6 +339,99 @@ static int check_i2c_inited(int8_t port)
     return _i2c_init(port);
 }
 
+#ifndef ES8311_CODEC_DEFAULT_ADDR
+#define ES8311_CODEC_DEFAULT_ADDR  (0x30)
+#endif
+#ifndef ES8388_CODEC_DEFAULT_ADDR
+#define ES8388_CODEC_DEFAULT_ADDR  (0x20)
+#endif
+#ifndef ES8389_CODEC_DEFAULT_ADDR
+#define ES8389_CODEC_DEFAULT_ADDR  (0x20)
+#endif
+#ifndef ES7210_CODEC_DEFAULT_ADDR
+#define ES7210_CODEC_DEFAULT_ADDR  (0x80)
+#endif
+#ifndef ES7243_CODEC_DEFAULT_ADDR
+#define ES7243_CODEC_DEFAULT_ADDR  (0x26)
+#endif
+
+static const char *codec_chip_name(codec_type_t type)
+{
+    switch (type) {
+        case CODEC_TYPE_ES8311:
+            return "es8311";
+        case CODEC_TYPE_ES8388:
+            return "es8388";
+        case CODEC_TYPE_ES8389:
+            return "es8389";
+        case CODEC_TYPE_ES7210:
+            return "es7210";
+        case CODEC_TYPE_ES7243:
+            return "es7243";
+        case CODEC_TYPE_DUMMY:
+            return "dummy";
+        default:
+            return NULL;
+    }
+}
+
+static uint8_t codec_default_i2c_addr(codec_type_t type)
+{
+    switch (type) {
+        case CODEC_TYPE_ES8311:
+            return ES8311_CODEC_DEFAULT_ADDR;
+        case CODEC_TYPE_ES8388:
+            return ES8388_CODEC_DEFAULT_ADDR;
+        case CODEC_TYPE_ES8389:
+            return ES8389_CODEC_DEFAULT_ADDR;
+        case CODEC_TYPE_ES7210:
+            return ES7210_CODEC_DEFAULT_ADDR;
+        case CODEC_TYPE_ES7243:
+            return ES7243_CODEC_DEFAULT_ADDR;
+        default:
+            return 0;
+    }
+}
+
+static const audio_codec_if_t *create_audio_codec(codec_type_t type, const audio_codec_ctrl_if_t *ctrl_if,
+                                                  int16_t pa_pin, float pa_gain, bool use_mclk, const char *adc_label)
+{
+    const char *chip = codec_chip_name(type);
+    if (chip == NULL) {
+        return NULL;
+    }
+    bool pa_used = pa_pin >= 0;
+    audio_codec_cfg_t codec_cfg = {
+        .ctrl_if = ctrl_if,
+        .gpio_if = codec_res.gpio_if,
+        .sys_cfg = {
+            .is_master = false,
+            .no_mclk = !use_mclk,
+        },
+        .adc_cfg = {
+            .digital_mic = false,
+            .label = adc_label ? adc_label : "",
+        },
+        .dac_cfg = {
+            .ref_enable = true,
+            .ref_dac_ch = 0,
+            .real_adc_data_ch = 0,
+        },
+        .pa_cfg = {
+            .pa_pin = pa_used ? pa_pin : -1,
+            .pa_active_low = pa_used ? false : true,
+            .hw_gain = {
+                .pa_gain = pa_used ? pa_gain : 0.0f,
+            },
+        },
+        .reset_cfg = {
+            .reset_pin = -1,
+            .reset_active_low = true,
+        },
+    };
+    return audio_codec_new(chip, &codec_cfg, sizeof(codec_cfg));
+}
+
 int init_codec(codec_init_cfg_t *cfg)
 {
     if (cfg == NULL) {
@@ -409,62 +501,23 @@ int init_codec(codec_init_cfg_t *cfg)
         codec_res.data_if = audio_codec_new_i2s_data(&i2s_out_cfg);
 
         audio_codec_i2c_cfg_t i2c_cfg = {
-            .port = out_cfg.i2c_port,
 #ifdef USE_I2C_MASTER
             .bus_handle = get_i2c_bus_handle(out_cfg.i2c_port),
 #endif
         };
-        // TODO add other codec support
-        switch (out_cfg.codec_type) {
-            case CODEC_TYPE_ES8311: {
-                i2c_cfg.addr = out_cfg.i2c_addr ? out_cfg.i2c_addr : ES8311_CODEC_DEFAULT_ADDR;
-                codec_res.out_ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
-                es8311_codec_cfg_t es8311_cfg = {
-                    .codec_mode = same_codec ? ESP_CODEC_DEV_WORK_MODE_BOTH : ESP_CODEC_DEV_WORK_MODE_DAC,
-                    .ctrl_if = codec_res.out_ctrl_if,
-                    .gpio_if = codec_res.gpio_if,
-                    .pa_pin = out_cfg.pa_pin,
-                    .use_mclk = out_cfg.use_mclk,
-                    .hw_gain.pa_gain = out_cfg.pa_gain,
-                };
-                codec_res.out_codec_if = es8311_codec_new(&es8311_cfg);
-            } break;
-            case CODEC_TYPE_ES8388: {
-                i2c_cfg.addr = out_cfg.i2c_addr ? out_cfg.i2c_addr : ES8388_CODEC_DEFAULT_ADDR;
-                codec_res.out_ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
-                es8388_codec_cfg_t es8388_cfg = {
-                    .codec_mode = same_codec ? ESP_CODEC_DEV_WORK_MODE_BOTH : ESP_CODEC_DEV_WORK_MODE_DAC,
-                    .ctrl_if = codec_res.out_ctrl_if,
-                    .gpio_if = codec_res.gpio_if,
-                    .pa_pin = out_cfg.pa_pin,
-                    .hw_gain.pa_gain = out_cfg.pa_gain,
-                };
-                codec_res.out_codec_if = es8388_codec_new(&es8388_cfg);
-            } break;
-
-            case CODEC_TYPE_ES8389: {
-                i2c_cfg.addr = out_cfg.i2c_addr ? out_cfg.i2c_addr : ES8389_CODEC_DEFAULT_ADDR;
-                codec_res.out_ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
-                es8389_codec_cfg_t es8389_cfg = {
-                    .codec_mode = same_codec ? ESP_CODEC_DEV_WORK_MODE_BOTH : ESP_CODEC_DEV_WORK_MODE_DAC,
-                    .ctrl_if = codec_res.out_ctrl_if,
-                    .gpio_if = codec_res.gpio_if,
-                    .pa_pin = out_cfg.pa_pin,
-                    .use_mclk = out_cfg.use_mclk,
-                    .hw_gain.pa_gain = out_cfg.pa_gain,
-                };
-                codec_res.out_codec_if = es8389_codec_new(&es8389_cfg);
-            } break;
-            case CODEC_TYPE_DUMMY: {
-                dummy_codec_cfg_t dummy_cfg = {
-                    .gpio_if = codec_res.gpio_if,
-                    .enable_gpio = out_cfg.pa_pin,
-                };
-                codec_res.out_codec_if = dummy_codec_new(&dummy_cfg);
-            } break;
-            default:
-                ESP_LOGE(TAG, "TODO not supported output codec type %d", out_cfg.codec_type);
-                break;
+        if (out_cfg.codec_type != CODEC_TYPE_DUMMY) {
+            i2c_cfg.addr = out_cfg.i2c_addr ? out_cfg.i2c_addr : codec_default_i2c_addr(out_cfg.codec_type);
+            codec_res.out_ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
+            if (codec_res.out_ctrl_if == NULL) {
+                ESP_LOGE(TAG, "Fail to create output codec ctrl");
+            }
+        }
+        if (out_cfg.codec_type == CODEC_TYPE_DUMMY || codec_res.out_ctrl_if) {
+            codec_res.out_codec_if = create_audio_codec(out_cfg.codec_type, codec_res.out_ctrl_if,
+                                                        out_cfg.pa_pin, out_cfg.pa_gain, out_cfg.use_mclk, "");
+            if (codec_res.out_codec_if == NULL) {
+                ESP_LOGE(TAG, "Fail to create output codec type %d", out_cfg.codec_type);
+            }
         }
         esp_codec_dev_cfg_t dev_cfg = {
             .codec_if = codec_res.out_codec_if,
@@ -497,44 +550,35 @@ int init_codec(codec_init_cfg_t *cfg)
             codec_res.data_in_if = audio_codec_new_i2s_data(&i2s_in_cfg);
         }
         audio_codec_i2c_cfg_t i2c_cfg = {
-            .port = in_cfg.i2c_port,
 #ifdef USE_I2C_MASTER
             .bus_handle = get_i2c_bus_handle(in_cfg.i2c_port),
 #endif
         };
-        // TODO add other codec support
-        switch (in_cfg.codec_type) {
-            case CODEC_TYPE_ES7210: {
-                i2c_cfg.addr = in_cfg.i2c_addr ? in_cfg.i2c_addr : ES7210_CODEC_DEFAULT_ADDR;
-                codec_res.in_ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
-                es7210_codec_cfg_t es7210_cfg = {
-                    .ctrl_if = codec_res.in_ctrl_if,
-                    .mic_selected = ES7210_SEL_MIC1 | ES7210_SEL_MIC3,
-                };
-                if (cfg->in_use_tdm || (cfg->in_mode == CODEC_I2S_MODE_TDM)) {
-                    es7210_cfg.mic_selected |= ES7210_SEL_MIC2 | ES7210_SEL_MIC4;
-                }
-                codec_res.in_codec_if = es7210_codec_new(&es7210_cfg);
-            } break;
-
-            case CODEC_TYPE_ES7243: {
-                i2c_cfg.addr = in_cfg.i2c_addr ? in_cfg.i2c_addr : ES7243_CODEC_DEFAULT_ADDR;
-                codec_res.in_ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
-                es7243_codec_cfg_t es7243_cfg = {
-                    .ctrl_if = codec_res.in_ctrl_if,
-                };
-                codec_res.in_codec_if = es7243_codec_new(&es7243_cfg);
-            } break;
-
-            case CODEC_TYPE_DUMMY: {
-                dummy_codec_cfg_t dummy_cfg = {
-                    .gpio_if = codec_res.gpio_if,
-                    .enable_gpio = out_cfg.pa_pin,
-                };
-                codec_res.in_codec_if = dummy_codec_new(&dummy_cfg);
+        if (in_cfg.codec_type != CODEC_TYPE_DUMMY) {
+            i2c_cfg.addr = in_cfg.i2c_addr ? in_cfg.i2c_addr : codec_default_i2c_addr(in_cfg.codec_type);
+            codec_res.in_ctrl_if = audio_codec_new_i2c_ctrl(&i2c_cfg);
+            if (codec_res.in_ctrl_if == NULL) {
+                ESP_LOGE(TAG, "Fail to create input codec ctrl");
             }
-            default:
-                break;
+        }
+        const char *adc_label = "";
+        int16_t pa_pin = -1;
+        float pa_gain = 0;
+        if (in_cfg.codec_type == CODEC_TYPE_ES7210 &&
+            (cfg->in_use_tdm || cfg->in_mode == CODEC_I2S_MODE_TDM)) {
+            adc_label = "FL,FR,RE,NA";
+        } else if (in_cfg.codec_type == CODEC_TYPE_ES7210) {
+            adc_label = "FL,FR";
+        } else if (in_cfg.codec_type == CODEC_TYPE_DUMMY) {
+            pa_pin = out_cfg.pa_pin;
+            pa_gain = out_cfg.pa_gain;
+        }
+        if (in_cfg.codec_type == CODEC_TYPE_DUMMY || codec_res.in_ctrl_if) {
+            codec_res.in_codec_if = create_audio_codec(in_cfg.codec_type, codec_res.in_ctrl_if,
+                                                       pa_pin, pa_gain, in_cfg.use_mclk, adc_label);
+            if (codec_res.in_codec_if == NULL) {
+                ESP_LOGE(TAG, "Fail to create input codec type %d", in_cfg.codec_type);
+            }
         }
         esp_codec_dev_cfg_t dev_cfg = {
             .codec_if = codec_res.in_codec_if,
@@ -546,7 +590,7 @@ int init_codec(codec_init_cfg_t *cfg)
     // Set default volume and gain for play and record
     if (codec_res.play_dev) {
         codec_res.play_i2s_port = out_cfg.i2s_port;
-        esp_codec_dev_set_out_vol(codec_res.play_dev, 60.0);
+        esp_codec_dev_set_out_vol(codec_res.play_dev, 60);
     }
     if (codec_res.record_dev) {
         codec_res.record_i2s_port = in_cfg.i2s_port;

@@ -971,6 +971,10 @@ static int av_render_audio_frame_reached(av_render_audio_frame_t *frame, void *c
         audio_render_close(render->cfg.audio_render);
         ESP_LOGI(TAG, "Get need resample %d in:%d out:%d", a_render->need_resample,
                  (int)a_render->audio_frame_info.sample_rate, (int)a_render->out_frame_info.sample_rate);
+        if (a_render->resample_handle) {
+            audio_resample_close(a_render->resample_handle);
+            a_render->resample_handle = NULL;
+        }
         if (a_render->need_resample && audio_need_resample(a_render)) {
             ret = audio_render_open(render->cfg.audio_render, &a_render->out_frame_info);
             audio_resample_cfg_t resample_cfg = {
@@ -985,10 +989,6 @@ static int av_render_audio_frame_reached(av_render_audio_frame_t *frame, void *c
                 ret = -1;
             }
         } else {
-            if (a_render->resample_handle) {
-                audio_resample_close(a_render->resample_handle);
-                a_render->resample_handle = NULL;
-            }
             ret = audio_render_open(render->cfg.audio_render, &a_render->audio_frame_info);
         }
         if (ret != 0) {
