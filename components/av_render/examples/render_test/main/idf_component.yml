@@ -4,7 +4,7 @@ dependencies:
   idf:
     version: ">=4.1.0"
   tempotian/codec_board:
-    version: "~2.0"
+    version: "~2.1"
     override_path: ../../../../codec_board
   espressif/esp_capture: "~1.0"
   tempotian/av_render:

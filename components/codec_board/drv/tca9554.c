@@ -53,9 +53,7 @@ const static audio_codec_ctrl_if_t *i2c_ctrl;
 
 static esp_err_t expander_dev_prob(uint8_t port)
 {
-    audio_codec_i2c_cfg_t i2c_cfg = {
-        .port = port,
-    };
+    audio_codec_i2c_cfg_t i2c_cfg = { 0 };
     for (size_t i = 0; i < sizeof(dev_list) / sizeof(dev_list[0]); i++) {
         i2c_cfg.addr = dev_list[i].addr;
         i2c_cfg.bus_handle = get_i2c_bus_handle(port);

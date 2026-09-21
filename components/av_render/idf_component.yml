@@ -1,6 +1,6 @@
 ## IDF Component Manager Manifest File
 description: Multimedia Render
-version: 1.1.0
+version: 1.1.1
 url: "https://github.com/espressif/esp-webrtc-solution/tree/main/components/av_render"
 documentation: "https://github.com/espressif/esp-webrtc-solution/tree/main/components/av_render/README.md"
 issues: "https://github.com/espressif/esp-webrtc-solution/issues"
