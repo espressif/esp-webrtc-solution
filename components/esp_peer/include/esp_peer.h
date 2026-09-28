@@ -157,12 +157,22 @@ typedef struct {
  */
 typedef enum {
     ESP_PEER_MSG_TYPE_NONE,      /*!< None message type */
-    ESP_PEER_MSG_TYPE_SDP,       /*!< SDP message type */
-    ESP_PEER_MSG_TYPE_CANDIDATE, /*!< ICE candidate message type */
+    ESP_PEER_MSG_TYPE_SDP,       /*!< SDP session description (null-terminated text) */
+    ESP_PEER_MSG_TYPE_CANDIDATE, /*!< Trickled ICE candidate (see `esp_peer_msg_t`) */
 } esp_peer_msg_type_t;
 
 /**
  * @brief  Peer message
+ *
+ * @note  `ESP_PEER_MSG_TYPE_SDP` data is a full SDP document. Local ICE candidates
+ *         appear as `a=candidate:` lines inside that SDP (`on_msg`).
+ *        `ESP_PEER_MSG_TYPE_CANDIDATE` data must be the bare candidate string that
+ *        browsers expose as `RTCIceCandidate.candidate`, starting with `candidate:`
+ *        (no `a=` prefix). Example:
+ *        `candidate:2097256870 1 udp 2122260223 10.0.0.1 53472 typ host`
+ *        Passing `a=candidate:...` without a trailing `\r\n` or `\n` is not treated
+ *        as a trickle candidate and is silently ignored (`esp_peer_send_msg` still
+ *        returns 0). An `a=candidate:` SDP line is only parsed when it is terminated.
  */
 typedef struct {
     esp_peer_msg_type_t type; /*!< Message type */
@@ -267,6 +277,12 @@ typedef struct {
 
     /**
      * @brief  Message callback
+     *
+     *         Called with local SDP (`ESP_PEER_MSG_TYPE_SDP`) to send over signaling.
+     *         Candidates gathered for that offer/answer are SDP lines (`a=candidate:`).
+     *         Remote trickled candidates must be fed back with `esp_peer_send_msg`
+     *         using `ESP_PEER_MSG_TYPE_CANDIDATE` and the bare `candidate:` form.
+     *
      * @param[in]  info  Pointer to peer message
      * @param[in]  ctx   User context
      * @return           Status code indicating success or failure.
@@ -567,6 +583,11 @@ int esp_peer_set_rtp_transformer(esp_peer_handle_t handle, esp_peer_rtp_transfor
 
 /**
  * @brief  Send message to peer
+ *
+ *         Use `ESP_PEER_MSG_TYPE_SDP` for the remote session description.
+ *         Use `ESP_PEER_MSG_TYPE_CANDIDATE` for a trickled ICE candidate: pass the
+ *         browser string as-is (`candidate:...`). Do not prepend `a=` unless the
+ *         payload is a complete SDP line ending in `\r\n` or `\n`.
  *
  * @param[in]  peer  Peer handle
  * @param[in]  msg   Message to send to peer

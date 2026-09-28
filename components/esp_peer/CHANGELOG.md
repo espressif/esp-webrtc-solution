@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.5.6
+
+### Bug Fixes
+
+- Fixed connection fail due to TCP and UDP use same IP and port (map candidate wrongly)
+- Fixed handshake HELLO request is dropped if received before connected (add cache logic)
+- Fixed connection fails due to ICE lite attribute set in SDP and no manual set ICE lite mode (no need to set)
+- Refined comment for SDP and candidate message string structure
+- Fixed ICE nominate wrongly if responded XOR mapped address not match local sent candidate even transaction ID matched
+- Fixed H264 profile use `4d001f` not match actual device capability
+
 ## v1.5.5
 
 ### Features
