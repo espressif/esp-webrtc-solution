@@ -1,0 +1,42 @@
+menu "Agora Bot Station duplex audio demo"
+
+config AGORA_DEMO_APP_ID
+    string "Agora App ID"
+    default ""
+    help
+        Agora App ID placed in the JWT appID claim.
+
+config AGORA_DEMO_APP_CERT
+    string "Agora App Cert"
+    default ""
+    help
+        Agora App Certificate used when dynamic authentication is enabled.
+        When dynamic authentication is disabled, use the App ID.
+
+config AGORA_DEMO_WHIP_BASE_URL
+    string "Agora WHIP endpoint base URL"
+    default "https://ap-webrtc-whip.ap.sd-rtn.com"
+    help
+        Endpoint origin or base path.
+
+config AGORA_DEMO_BOT_STATION_BASE_URL
+    string "Bot Station API base URL"
+    default "https://botstation.sh2.agoralab.co/api"
+    help
+        Device API base URL used for pairing, binding, and conversations.
+
+config AGORA_DEMO_HARDWARE_MODEL
+    string "Bot Station hardware model"
+    default "esp32-s3-korvo-v2"
+    help
+        Hardware model reported while requesting a pairing code.
+
+config AGORA_DEMO_WIFI_SSID
+    string "Wi-Fi SSID"
+    default ""
+
+config AGORA_DEMO_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+
+endmenu
