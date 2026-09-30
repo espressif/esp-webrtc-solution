@@ -5,7 +5,7 @@ version: 1.0.0
 dependencies:
   espressif/nghttp: "~1.65.0"
   espressif/esp_websocket_client: "~1.4.0"
-  espressif/esp_capture: "~1.0"
+  espressif/esp_capture: "~1.1"
   espressif/esp_peer:
     override_path: ../esp_peer
     version: "*"

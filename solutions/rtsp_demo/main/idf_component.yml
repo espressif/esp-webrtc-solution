@@ -3,7 +3,7 @@ dependencies:
   ## Required IDF version
   idf:
     version: ">=5.0"
-  espressif/esp_capture: "*"
+  espressif/esp_capture: "~1.1"
   espressif/esp_media_protocols: "*"
   espressif/esp_board_manager:
     version: "~0.7"
