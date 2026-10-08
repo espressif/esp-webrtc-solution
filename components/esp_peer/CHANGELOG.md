@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.5.7
+
+### Bug Fixes
+
+- Fixed skipped nomination when XOR-MAPPED-ADDRESS was not a local candidate
+
+### Features
+
+- Added support for `prflx` candidate if not received in signaling yet
+- Added esp32c6 target support
+
 ## v1.5.6
 
 ### Bug Fixes
