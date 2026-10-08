@@ -56,6 +56,15 @@ idf.py gen-bmgr-config -b YOUR_BOARD_NAME
 idf.py gen-bmgr-config -b esp32_p4_function_ev_board
 ```
 
+For ESP-VoCat (EchoEar), select the profile matching the PCB revision printed
+on the board. The `esp_vocat_1_2` profile has been verified on ESP-VoCat v1.2:
+
+```bash
+idf.py gen-bmgr-config -b esp_vocat_1_0
+# or
+idf.py gen-bmgr-config -b esp_vocat_1_2
+```
+
 Build and flash:
 
 ```bash
