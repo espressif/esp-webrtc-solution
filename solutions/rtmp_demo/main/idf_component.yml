@@ -2,7 +2,7 @@
 dependencies:
   idf:
     version: ">=5.0"
-  espressif/esp_capture: "~1.0"
+  espressif/esp_capture: "~1.1"
   espressif/esp_media_protocols: "~0.6"
   espressif/esp_board_manager:
     version: "~0.7"

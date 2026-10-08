@@ -6,7 +6,7 @@ dependencies:
   tempotian/codec_board:
     version: "~2.1"
     override_path: ../../../../codec_board
-  espressif/esp_capture: "~1.0"
+  espressif/esp_capture: "~1.1"
   tempotian/av_render:
     override_path: ../../../../av_render
   tempotian/media_lib_utils: "~0.9"

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.2.0
+
+- Align `esp_audio_codec` to ~2.6, `esp_audio_effects` to ~1.4, and `esp_image_effects` to ~1.2
+
 ## v1.0.1
 
 - Fixed audio resample leakage when replay not call `av_render_reset`
