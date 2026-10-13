@@ -24,6 +24,6 @@ idf_component_register(
         espressif__esp_codec_dev
         mbedtls
         nvs_flash
-        json
+        espressif__cjson
         webrtc_utils
 )
