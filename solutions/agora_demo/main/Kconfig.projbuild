@@ -21,7 +21,7 @@ config AGORA_DEMO_WHIP_BASE_URL
 
 config AGORA_DEMO_BOT_STATION_BASE_URL
     string "Bot Station API base URL"
-    default "https://botstation.sh2.agoralab.co/api"
+    default "https://botstation.agora.io/api"
     help
         Device API base URL used for pairing, binding, and conversations.
 

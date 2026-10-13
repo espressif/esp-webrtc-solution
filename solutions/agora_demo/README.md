@@ -46,7 +46,7 @@ Under **Agora Bot Station duplex audio demo**, configure:
   deployment. The default is the production endpoint at
   `https://ap-webrtc-whip.ap.sd-rtn.com`.
 - **Bot Station API base URL**: the Device API URL for the same deployment.
-  The default is `https://botstation.sh2.agoralab.co/api`.
+  The default is `https://botstation.agora.io/api`.
 - **Bot Station hardware model**: the model reported during pairing. The
   default is suitable for ESP32-S3-Korvo V2.
 - **Wi-Fi SSID**: the 2.4 GHz access point name.
@@ -72,7 +72,7 @@ code. The UART console prints:
 Bot Station pairing code: <six digits>
 ```
 
-Sign in to the [Agora Bot Station console](https://botstation.sh2.agoralab.co/),
+Sign in to the [Agora Bot Station console](https://botstation.agora.io/),
 select the Agent that should own the board, and pair the device with that code.
 The code binds the board's stable device ID to that exact Agent. The channel
 and UIDs returned later identify one conversation; they are not the Agent's
