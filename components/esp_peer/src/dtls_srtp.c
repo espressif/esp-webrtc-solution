@@ -118,6 +118,9 @@ static int dtls_srtp_try_gen_cert(dtls_srtp_t *dtls_srtp)
         ESP_LOGE(TAG, "Use cached cert/key failed, fallback to regenerate, ret=%d", ret);
     }
 #endif
+    /* Release the first seed mutex before the self-signed path seeds this context again. */
+    mbedtls_ctr_drbg_free(&dtls_srtp->ctr_drbg);
+    mbedtls_ctr_drbg_init(&dtls_srtp->ctr_drbg);
     ret = dtls_srtp_selfsign_cert(dtls_srtp, true);
     if (ret != 0) {
         return ret;
