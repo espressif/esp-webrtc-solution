@@ -25,6 +25,7 @@ Additionally, the repository contains demo applications under `solutions/` that 
 | Folder | Description |
 |--------|-------------|
 | [`openai_demo`](solutions/openai_demo/) | Real-time WebRTC session to an OpenAI Realtime server with a custom signaling path. |
+| [`agora_demo`](solutions/agora_demo/) | Chat Agent client for **Agora** over duplex WHIP. |
 | [`whip_demo`](solutions/whip_demo/) | Publishes AV to a server using WHIP (`esp_webrtc`). |
 | [`kvs_master`](solutions/kvs_master/) | Amazon Kinesis Video Streams (**MASTER**): receives SDP offers from viewers and answers over KVS signaling. |
 | [`kms_demo`](solutions/kms_demo/) | Publisher to **Kurento** Media Server; includes a browser viewer for the stream. |

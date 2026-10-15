@@ -1367,10 +1367,9 @@ int av_render_set_fixed_frame_info(av_render_handle_t h, av_render_audio_frame_i
         return ESP_MEDIA_ERR_INVALID_ARG;
     }
     media_lib_mutex_lock(render->api_lock, MEDIA_LIB_MAX_LOCK_TIME);
-    int ret = ESP_MEDIA_ERR_WRONG_STATE;
     render->aud_fix_info = *frame_info;
     media_lib_mutex_unlock(render->api_lock);
-    return ret;
+    return ESP_MEDIA_ERR_OK;
 }
 
 static bool get_support_output_format(av_render_t *render, av_render_video_info_t *video_info, vdec_cfg_t *cfg)
