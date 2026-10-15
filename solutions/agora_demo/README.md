@@ -4,7 +4,8 @@ This solution connects an official ESP32-S3-Korvo V2 board to an Agora Bot
 Station Agent. The board uses Agora duplex WHIP as its only RTC join path. Bot
 Station assigns the channel, board string UID, and Agent string UID for each
 conversation; the firmware does not use a fixed channel. Microphone and
-speaker audio use Opus, 48 kHz, mono in both directions.
+speaker audio use Opus, 16 kHz, mono in both directions. Playback is
+stereo so acoustic echo cancellation can use the speaker reference.
 
 ## Prerequisites
 
@@ -145,7 +146,7 @@ The common hardware and network startup is:
 
 ```text
 Audio ADC and DAC are ready
-Opus media ready: 48000 Hz mono, 100 ms playout threshold
+Opus media ready: 16000 Hz mono, AEC, 100 ms playout threshold
 wifi_init_sta finished.
 got ip:<address>
 Network connected
