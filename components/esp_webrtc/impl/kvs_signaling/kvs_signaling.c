@@ -85,8 +85,8 @@ static void free_ice_info(esp_peer_signaling_ice_info_t* info) {
 
 static void describe_signalling_channel_resp(http_resp_t* resp, void* ctx) {
     const char* data = (const char*)resp->data;
-    ESP_LOGD(TAG, "Received: %s", data);
-    cJSON *root = cJSON_Parse((const char *)data);
+    ESP_LOGD(TAG, "Received: %.*s", resp->size, data);
+    cJSON *root = cJSON_ParseWithLength((const char *)data, (size_t)resp->size);
     if (!root) {
         return;
     }
@@ -96,7 +96,8 @@ static void describe_signalling_channel_resp(http_resp_t* resp, void* ctx) {
         ESP_LOGE(TAG, "ChannelInfo not found in response");
     }
     cJSON *arn_json = cJSON_GetObjectItem(info_json, "ChannelARN");
-    if (arn_json) {
+    if (cJSON_IsString(arn_json) && arn_json->valuestring) {
+        free(info->channel_arn);
         info->channel_arn = strdup(arn_json->valuestring);
         ESP_LOGI(TAG, "ChannelARN: %s", info->channel_arn);
     }
@@ -107,7 +108,7 @@ static void describe_signalling_channel_resp(http_resp_t* resp, void* ctx) {
 static void get_signalling_channel_endpoint_resp(http_resp_t* resp, void* ctx) {
     const char* data = (const char*)resp->data;
 
-    cJSON *root = cJSON_Parse((const char *)data);
+    cJSON *root = cJSON_ParseWithLength((const char *)data, (size_t)resp->size);
     if (!root) {
         return;
     }
@@ -121,12 +122,15 @@ static void get_signalling_channel_endpoint_resp(http_resp_t* resp, void* ctx) {
 		cJSON *subitem = cJSON_GetArrayItem(endpoint_list_json, i);
         cJSON *protocol = cJSON_GetObjectItem(subitem, "Protocol");
         cJSON *resource_ep = cJSON_GetObjectItem(subitem, "ResourceEndpoint");
-        if (protocol && resource_ep) {
+        if (cJSON_IsString(protocol) && protocol->valuestring &&
+            cJSON_IsString(resource_ep) && resource_ep->valuestring) {
             if (strcmp(protocol->valuestring, "WSS") == 0) { /* wss */
                 ESP_LOGI(TAG, "Found WSS Resource Endpoint %s", resource_ep->valuestring);
+                free(info->wss_url);
                 info->wss_url = strdup(resource_ep->valuestring);
             } else if (strcmp(protocol->valuestring, "HTTPS") == 0) { /* https */
                 ESP_LOGI(TAG, "Found HTTPS Resource Endpoint %s", resource_ep->valuestring);
+                free(info->ice_server);
                 info->ice_server = strdup(resource_ep->valuestring);
             } else {
                 ESP_LOGW(TAG, "Skipping Unsupported protocol endpoint %s: %s", protocol->valuestring, resource_ep->valuestring);
@@ -140,7 +144,7 @@ static void get_signalling_channel_endpoint_resp(http_resp_t* resp, void* ctx) {
 static void credential_body(http_resp_t* resp, void* ctx) {
     const char* data = (const char*)resp->data;
 
-    cJSON *root = cJSON_Parse((const char *)data);
+    cJSON *root = cJSON_ParseWithLength((const char *)data, (size_t)resp->size);
     if (!root) {
         return;
     }
@@ -159,24 +163,27 @@ static void credential_body(http_resp_t* resp, void* ctx) {
             break;
         }
         cJSON *urls = cJSON_GetArrayItem(url_arr, 0);
-        if (urls == NULL) {
+        if (!cJSON_IsString(urls) || urls->valuestring == NULL) {
             break;
         }
 
         /* TODO: Use other URLs as well */
+        free(ice->server_info.stun_url);
         ice->server_info.stun_url = strdup(urls->valuestring);
         if (ice->server_info.stun_url == NULL) {
             break;
         }
         cJSON *user = cJSON_GetObjectItem(server_arr, "Username");
-        if (user == NULL) {
+        if (!cJSON_IsString(user) || user->valuestring == NULL) {
             break;
         }
+        free(ice->server_info.user);
         ice->server_info.user = strdup(user->valuestring);
         cJSON *psw = cJSON_GetObjectItem(server_arr, "Password");
-        if (psw == NULL) {
+        if (!cJSON_IsString(psw) || psw->valuestring == NULL) {
             break;
         }
+        free(ice->server_info.psw);
         ice->server_info.psw = strdup(psw->valuestring);
         ESP_LOGI(TAG, "Got url:%s user_name: %s psw:%s",  ice->server_info.stun_url,
                  ice->server_info.user, ice->server_info.psw);
@@ -217,20 +224,20 @@ static int on_text(void *user, const char *text, size_t len)
     bool is_ice_candidate = false;
 
     if (sg->cfg.on_msg) {
-        cJSON *_json = cJSON_Parse(text);
+        cJSON *_json = cJSON_ParseWithLength(text, len);
         cJSON *msg = NULL;
         do {
             if (_json == NULL) {
                 break;
             }
             msg = cJSON_GetObjectItem(_json, "senderClientId");
-            if (msg != NULL) {
+            if (cJSON_IsString(msg) && msg->valuestring != NULL) {
                 ESP_LOGI(TAG, "Received msg from client %s", msg->valuestring);
                 free(sg->client_info.client_id);
                 sg->client_info.client_id = strdup(msg->valuestring);
             }
             msg = cJSON_GetObjectItem(_json, "messageType");
-            if (msg != NULL) {
+            if (cJSON_IsString(msg) && msg->valuestring != NULL) {
                 ESP_LOGI(TAG, "MessageType: %s", msg->valuestring);
                 if (strcmp(msg->valuestring, "SDP_OFFER") != 0) {
                     is_ice_candidate = true;
@@ -240,6 +247,9 @@ static int on_text(void *user, const char *text, size_t len)
             }
 
             msg = cJSON_GetObjectItem(_json, "messagePayload");
+            if (!cJSON_IsString(msg) || msg->valuestring == NULL) {
+                break;
+            }
 
             int required_len = strlen(msg->valuestring); /* TODO: Do precise compact allocation */
             base64_decoded_msg = heap_caps_calloc(1, required_len + 1, MALLOC_CAP_SPIRAM);
@@ -267,7 +277,7 @@ static int on_text(void *user, const char *text, size_t len)
 
             if (is_ice_candidate) { /* Just get the candidate and do away with it */
                 cJSON *candidate = cJSON_GetObjectItem(_json, "candidate");
-                if (candidate) {
+                if (cJSON_IsString(candidate) && candidate->valuestring) {
                     esp_peer_signaling_msg_t msg = {
                         .type = ESP_PEER_SIGNALING_MSG_CANDIDATE,
                         .data = (uint8_t*)candidate->valuestring,
@@ -282,21 +292,24 @@ static int on_text(void *user, const char *text, size_t len)
             cJSON * method;
             if (msg == NULL) {
                 method = cJSON_GetObjectItem(_json, "type");
-                if (method == NULL) {
+                if (!cJSON_IsString(method) || method->valuestring == NULL) {
                     break;
                 }
                 msg = _json;
             } else {
+                if (!cJSON_IsString(msg) || msg->valuestring == NULL) {
+                    break;
+                }
                 msg = cJSON_Parse(msg->valuestring);
                 method = cJSON_GetObjectItem(msg, "type");
-                if (method == NULL) {
+                if (!cJSON_IsString(method) || method->valuestring == NULL) {
                     break;
                 }
             }
             if (strcmp(method->valuestring, "offer") == 0) {
                 ESP_LOGI(TAG, "Received SDP OFFER from peer");
                 cJSON *sdp = cJSON_GetObjectItem(msg, "sdp");
-                if (sdp) {
+                if (cJSON_IsString(sdp) && sdp->valuestring) {
                     ESP_LOGI(TAG, "Forwarding offer to WebRTC stack, client_id=%s, is_initiator=%d",
                              sg->client_info.client_id ? sg->client_info.client_id : "NULL",
                              sg->ice_info.is_initiator);
@@ -314,7 +327,7 @@ static int on_text(void *user, const char *text, size_t len)
             }
             else if (strcmp(method->valuestring, "answer") == 0) {
                 cJSON *sdp = cJSON_GetObjectItem(msg, "sdp");
-                if (sdp) {
+                if (cJSON_IsString(sdp) && sdp->valuestring) {
                     esp_peer_signaling_msg_t msg = {
                         .type = ESP_PEER_SIGNALING_MSG_SDP,
                         .data = (uint8_t*)sdp->valuestring,
@@ -336,7 +349,7 @@ static int on_text(void *user, const char *text, size_t len)
             else if (strcmp(method->valuestring, "candidate") == 0) {
                 ESP_LOGI(TAG, "Received ICE candidate from peer");
                 cJSON *candidate = cJSON_GetObjectItem(msg, "candidate");
-                if (candidate) {
+                if (cJSON_IsString(candidate) && candidate->valuestring) {
                     esp_peer_signaling_msg_t msg = {
                         .type = ESP_PEER_SIGNALING_MSG_CANDIDATE,
                         .data = (uint8_t*)candidate->valuestring,
@@ -426,10 +439,11 @@ static void websocket_event_handler(void *ctx, esp_event_base_t base, int32_t ev
         } else if (websocket_msg->data_size == 0) { /* non-fragmented message */
             on_text(ctx, data->data_ptr, data->data_len);
         } else { /* final part of the fragment */
-            if (websocket_msg->data_size + data->data_len <= RECEIVED_MSG_BUF_SIZE) { /* valid fragmented gathered message */
+            if (websocket_msg->data_size + data->data_len < RECEIVED_MSG_BUF_SIZE) { /* valid fragmented gathered message */
                 /* Copy last piece */
                 memcpy(websocket_msg->buf + websocket_msg->data_size, data->data_ptr, data->data_len);
                 websocket_msg->data_size += data->data_len;
+                websocket_msg->buf[websocket_msg->data_size] = '\0';
                 /* Process now... */
                 on_text(ctx, websocket_msg->buf, websocket_msg->data_size);
             } else {
@@ -529,7 +543,7 @@ const char *get_ice_config_template =
 
 static int wss_signal_start(esp_peer_signaling_cfg_t* cfg, esp_peer_signaling_handle_t* h)
 {
-    if (cfg->signal_url == NULL || cfg == NULL || h == NULL) {
+    if (cfg == NULL || cfg->signal_url == NULL || h == NULL) {
         return -1;
     }
     wss_sig_t* sg = calloc(1, sizeof(wss_sig_t));
@@ -541,6 +555,8 @@ static int wss_signal_start(esp_peer_signaling_cfg_t* cfg, esp_peer_signaling_ha
     char *http_body = heap_caps_calloc(1, HTTP_BODY_BUF_SIZE, MALLOC_CAP_SPIRAM);
     if (!http_body) {
         ESP_LOGE(TAG, "Could not allocate buffer for http_body");
+        ret = -1;
+        goto __exit;
     }
 
     /* For describeSignalingChannel, use control plane endpoint: kinesisvideo.<region>.amazonaws.com */
@@ -553,7 +569,7 @@ static int wss_signal_start(esp_peer_signaling_cfg_t* cfg, esp_peer_signaling_ha
         goto __exit;
     }
     snprintf(complete_url, required_len, "https://kinesisvideo.%s.amazonaws.com%s", REGION, HTTP_API_DESCRIBE_SIGNALING_CHANNEL);
-    sprintf(http_body, describe_channel_body_template, channel_name);
+    snprintf(http_body, HTTP_BODY_BUF_SIZE, describe_channel_body_template, channel_name);
 
     // Http post to get client info firstly
     https_post(complete_url, NULL, http_body, describe_signalling_channel_resp, &sg->client_info);
@@ -574,7 +590,13 @@ static int wss_signal_start(esp_peer_signaling_cfg_t* cfg, esp_peer_signaling_ha
         goto __exit;
     }
     snprintf(complete_url, required_len, "https://kinesisvideo.%s.amazonaws.com%s", REGION, HTTP_API_GET_SIGNALING_CHANNEL_ENDPOINT);
-    sprintf(http_body, get_signalling_endpoint_body_template, sg->client_info.channel_arn);
+    int n_ep = snprintf(http_body, HTTP_BODY_BUF_SIZE, get_signalling_endpoint_body_template, sg->client_info.channel_arn);
+    if (n_ep < 0 || n_ep >= HTTP_BODY_BUF_SIZE) {
+        ESP_LOGE(TAG, "ChannelARN too long for http_body buffer");
+        free(complete_url);
+        ret = -1;
+        goto __exit;
+    }
 
     // Http post to get client info firstly
     https_post(complete_url, NULL, http_body, get_signalling_channel_endpoint_resp, &sg->client_info);
@@ -589,8 +611,8 @@ static int wss_signal_start(esp_peer_signaling_cfg_t* cfg, esp_peer_signaling_ha
     /* get Ice server config */
     int ice_server_len = strlen(sg->client_info.ice_server) + strlen(HTTP_API_GET_ICE_CONFIG);
     complete_url = heap_caps_calloc(1, ice_server_len + 1, MALLOC_CAP_SPIRAM);
-    sprintf(complete_url, "%s%s", sg->client_info.ice_server, HTTP_API_GET_ICE_CONFIG);
-    sprintf(http_body, get_ice_config_template, sg->client_info.channel_arn, APP_MASTER_CLIENT_ID);
+    snprintf(complete_url, ice_server_len + 1, "%s%s", sg->client_info.ice_server, HTTP_API_GET_ICE_CONFIG);
+    snprintf(http_body, HTTP_BODY_BUF_SIZE, get_ice_config_template, sg->client_info.channel_arn, APP_MASTER_CLIENT_ID);
 
     https_post(complete_url, NULL, http_body, credential_body, &sg->ice_info);
     free(complete_url);

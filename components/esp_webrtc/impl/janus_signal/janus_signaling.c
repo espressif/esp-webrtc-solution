@@ -62,7 +62,10 @@ typedef struct {
 static void janus_save_response(http_resp_t *resp, void *ctx)
 {
     janus_http_resp_t *http_resp = (janus_http_resp_t *)ctx;
-    if (resp->size > http_resp->malloc_size) {
+    if (resp == NULL || resp->data == NULL || resp->size <= 0) {
+        return;
+    }
+    if (resp->size + 1 > http_resp->malloc_size) {
         SAFE_FREE(http_resp->data);
         http_resp->malloc_size = 0;
         http_resp->data = malloc(resp->size + 1);
@@ -282,7 +285,7 @@ static void janus_handle_event(janus_signaling_t *sig, cJSON *event)
 static void janus_poll_thread(void *arg)
 {
     janus_signaling_t *sig = (janus_signaling_t *)arg;
-    while (sig->running) {
+    while (__atomic_load_n(&sig->running, __ATOMIC_ACQUIRE)) {
         char poll_url[384];
         snprintf(poll_url, sizeof(poll_url), "%s/%" PRIu64 "?maxev=1&rid=%" PRIu64,
                  sig->cfg.signal_url, sig->session_id, (uint64_t)esp_timer_get_time());

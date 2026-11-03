@@ -88,7 +88,16 @@
         const CHUNK_END = 1 << 7;
         const CHUNK_SEQ_MASK = 0x7f;
         const CHUNK_HDR = 5;
-        const CHUNK_SIZE = 10000;
+        const CHUNK_SIZE = 4096;
+        // Backpressure is applied between complete JPEGs by the capture loop.
+        // Never pause while enqueueing the chunks of one frame.
+        const DC_BUFFER_HIGH = 256 * 1024;
+        const DC_BUFFER_LOW = 64 * 1024;
+        // Keep enough queued data to avoid turning SCTP into frame-level
+        // stop-and-wait after its congestion window contracts.
+        const DC_FRAME_START_BUFFER = DC_BUFFER_LOW;
+        const DC_QUEUE_POLL_MS = 5;
+        const SEND_STATS_INTERVAL_MS = 2000;
 
         const btnConnect = document.getElementById('btnConnect');
         const btnAccept = document.getElementById('btnAccept');
@@ -105,7 +114,7 @@
         const localVideo = document.getElementById('localVideo');
         const remoteImage = document.getElementById('remoteImage');
         const sendCanvas = document.getElementById('sendCanvas');
-        const ctx = sendCanvas.getContext('2d');
+        const ctx = sendCanvas.getContext('2d', { willReadFrequently: true });
 
         function getSendResolution() {
             const raw = (selSendRes && selSendRes.value) || '640x480';
@@ -138,6 +147,7 @@
         let reasmActive = false;
         let reasmNextSeq = 0;
         let sendChunkBuf = null; // reusable send buffer (avoid alloc every chunk)
+        let sendStats = null;
         window.__jpeg_frames = 0;
         window.__jpeg_dc_open = false;
         window.__jpeg_ice = 'new';
@@ -192,12 +202,13 @@
         }
 
         function sendJpegChunked(arrayBuffer) {
-            if (!dataChannel || dataChannel.readyState !== 'open') return;
+            if (!dataChannel || dataChannel.readyState !== 'open') return false;
+            const dc = dataChannel;
             const u8 = new Uint8Array(arrayBuffer);
             const chunkCount = Math.ceil(u8.length / CHUNK_SIZE) || 1;
             if (chunkCount > CHUNK_SEQ_MASK + 1) {
                 log('Drop frame: too many chunks for 7-bit seq (' + chunkCount + ')');
-                return;
+                return false;
             }
             const need = CHUNK_HDR + CHUNK_SIZE;
             if (!sendChunkBuf || sendChunkBuf.length < need) {
@@ -206,15 +217,22 @@
             let offset = 0;
             let seq = 0;
             while (offset < u8.length) {
+                if (dc !== dataChannel || dc.readyState !== 'open') return false;
                 const end = Math.min(offset + CHUNK_SIZE, u8.length);
                 let chunkId = seq & CHUNK_SEQ_MASK;
                 if (end >= u8.length) chunkId |= CHUNK_END;
                 const slice = u8.subarray(offset, end);
                 const n = encodeChunkInto(sendChunkBuf, chunkId, slice);
-                dataChannel.send(sendChunkBuf.subarray(0, n));
+                try {
+                    dc.send(sendChunkBuf.subarray(0, n));
+                } catch (e) {
+                    log('DC send failed: ' + e.message);
+                    return false;
+                }
                 offset = end;
                 seq++;
             }
+            return true;
         }
 
         function handleChunkedMessage(data) {
@@ -279,8 +297,12 @@
         function setupDataChannel(dc) {
             dataChannel = dc;
             dataChannel.binaryType = 'arraybuffer';
+            dataChannel.bufferedAmountLowThreshold = DC_BUFFER_LOW;
             dataChannel.onopen = () => {
                 log('DC Open: ' + dc.label);
+                log('DC frame backpressure: chunk=' + CHUNK_SIZE +
+                    'B high=' + Math.round(DC_BUFFER_HIGH / 1024) +
+                    'KB low=' + Math.round(DC_BUFFER_LOW / 1024) + 'KB');
                 window.__jpeg_dc_open = true;
                 setStatus('CONNECTED');
                 callState = 'CONNECTED';
@@ -363,12 +385,84 @@
             return localStream;
         }
 
+        function resetSendStats() {
+            const now = performance.now();
+            const buffered = dataChannel ? dataChannel.bufferedAmount : 0;
+            sendStats = {
+                startedAt: now,
+                lastReportAt: now,
+                startBuffered: buffered,
+                encodedFrames: 0,
+                sentFrames: 0,
+                sentBytes: 0,
+                droppedBackpressure: 0,
+                droppedOther: 0,
+                peakBuffered: buffered
+            };
+            window.__jpeg_dropped_backpressure = 0;
+            window.__jpeg_dc_buffered = 0;
+        }
+
+        function reportSendStats(force) {
+            if (!sendStats) return;
+            const now = performance.now();
+            const elapsed = now - sendStats.lastReportAt;
+            if (!force && elapsed < SEND_STATS_INTERVAL_MS) return;
+            const seconds = Math.max(elapsed / 1000, 0.001);
+            const buffered = dataChannel ? dataChannel.bufferedAmount : 0;
+            const avgJpegBytes = sendStats.sentFrames ?
+                sendStats.sentBytes / sendStats.sentFrames : 0;
+            const avgJpeg = Math.round(avgJpegBytes / 1024);
+            // Bytes accepted by the transport during this interval. Subtract
+            // queue growth so a short enqueue burst is not mistaken for link
+            // capacity.
+            const drainedBytes = Math.max(0,
+                sendStats.sentBytes + sendStats.startBuffered - buffered);
+            const drainMbps = drainedBytes * 8 / seconds / 1000000;
+            log('TX: ' + (sendStats.sentFrames / seconds).toFixed(1) + ' fps, ' +
+                (sendStats.sentBytes * 8 / seconds / 1000000).toFixed(2) + ' Mbps' +
+                ', drain=' + drainMbps.toFixed(2) + ' Mbps' +
+                ', JPEG avg=' + avgJpeg + 'KB' +
+                ', encoded=' + sendStats.encodedFrames +
+                ', sent=' + sendStats.sentFrames +
+                ', drop(queue)=' + sendStats.droppedBackpressure +
+                ', drop(other)=' + sendStats.droppedOther +
+                ', dcBuffer=' + Math.round(buffered / 1024) + 'KB' +
+                ', peak=' + Math.round(sendStats.peakBuffered / 1024) + 'KB' +
+                ', state=' + callState +
+                ', dc=' + (dataChannel ? dataChannel.readyState : 'none') +
+                ', enabled=' + chkSendVideo.checked +
+                ', video=' + localVideo.videoWidth + 'x' + localVideo.videoHeight +
+                '/ready' + localVideo.readyState);
+            sendStats.lastReportAt = now;
+            sendStats.encodedFrames = 0;
+            sendStats.sentFrames = 0;
+            sendStats.sentBytes = 0;
+            sendStats.droppedBackpressure = 0;
+            sendStats.droppedOther = 0;
+            sendStats.peakBuffered = buffered;
+            sendStats.startBuffered = buffered;
+        }
+
         function startVideoLoop() {
             if (sendLoopTimer) return;
+            if (!sendStats) resetSendStats();
             const tick = () => {
                 const tickStart = performance.now();
                 sendLoopTimer = null;
                 if (callState !== 'CONNECTED' || !dataChannel || dataChannel.readyState !== 'open' || !chkSendVideo.checked) {
+                    reportSendStats(true);
+                    return;
+                }
+                const bufferedBeforeCapture = dataChannel.bufferedAmount;
+                sendStats.peakBuffered = Math.max(sendStats.peakBuffered, bufferedBeforeCapture);
+                window.__jpeg_dc_buffered = bufferedBeforeCapture;
+                // Clock frame production from actual DataChannel drain. Do not
+                // encode or drop another frame while the previous JPEG remains
+                // queued; poll briefly and send immediately once it has drained.
+                if (bufferedBeforeCapture > DC_FRAME_START_BUFFER) {
+                    reportSendStats(false);
+                    sendLoopTimer = setTimeout(tick, DC_QUEUE_POLL_MS);
                     return;
                 }
                 if (!localVideo.videoWidth || localVideo.readyState < 2) {
@@ -391,14 +485,41 @@
                     }
                     window.__jpeg_canvas_avg = sum / ((sample.length / 4) * 3);
                 } catch (e) {}
-                sendCanvas.toBlob((blob) => {
+                const activeStats = sendStats;
+                sendCanvas.toBlob(async (blob) => {
                     if (blob) {
+                        activeStats.encodedFrames++;
                         window.__jpeg_sent_frames = (window.__jpeg_sent_frames || 0) + 1;
-                        window.__jpeg_sent_bytes = (window.__jpeg_sent_bytes || 0) + blob.size;
                         const sizes = window.__jpeg_sent_sizes || (window.__jpeg_sent_sizes = []);
                         if (sizes.length < 32) sizes.push(blob.size);
-                        blob.arrayBuffer().then(buf => sendJpegChunked(buf));
+                        const buffered = dataChannel && dataChannel.readyState === 'open' ?
+                            dataChannel.bufferedAmount : 0;
+                        if (!dataChannel || dataChannel.readyState !== 'open' ||
+                            buffered >= DC_BUFFER_HIGH) {
+                            activeStats.droppedOther++;
+                        } else {
+                            try {
+                                const buf = await blob.arrayBuffer();
+                                if (await sendJpegChunked(buf)) {
+                                    activeStats.sentFrames++;
+                                    activeStats.sentBytes += blob.size;
+                                    window.__jpeg_sent_bytes = (window.__jpeg_sent_bytes || 0) + blob.size;
+                                    const bufferedAfterSend = dataChannel ? dataChannel.bufferedAmount : 0;
+                                    activeStats.peakBuffered = Math.max(
+                                        activeStats.peakBuffered, bufferedAfterSend);
+                                    window.__jpeg_dc_buffered = bufferedAfterSend;
+                                } else {
+                                    activeStats.droppedOther++;
+                                }
+                            } catch (e) {
+                                activeStats.droppedOther++;
+                                log('JPEG send error: ' + e.message);
+                            }
+                        }
+                    } else {
+                        activeStats.droppedOther++;
                     }
+                    reportSendStats(false);
                     const interval = 1000 / getSendFps();
                     const delay = Math.max(0, interval - (performance.now() - tickStart));
                     sendLoopTimer = setTimeout(tick, delay);
@@ -437,6 +558,8 @@
                 clearTimeout(sendLoopTimer);
                 sendLoopTimer = null;
             }
+            reportSendStats(true);
+            sendStats = null;
         }
 
         function resetPeerConnection() {

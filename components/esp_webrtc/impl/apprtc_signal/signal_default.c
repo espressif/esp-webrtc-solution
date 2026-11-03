@@ -180,23 +180,26 @@ static void credential_body(http_resp_t *resp, void *ctx)
             break;
         }
         cJSON *urls = cJSON_GetArrayItem(url_arr, 0);
-        if (urls == NULL) {
+        if (!cJSON_IsString(urls) || urls->valuestring == NULL) {
             break;
         }
         // TODO only set first url
+        free(ice->server_info.stun_url);
         ice->server_info.stun_url = strdup(urls->valuestring);
         if (ice->server_info.stun_url == NULL) {
             break;
         }
         cJSON *user = cJSON_GetObjectItem(server_arr, "username");
-        if (user == NULL) {
+        if (!cJSON_IsString(user) || user->valuestring == NULL) {
             break;
         }
+        free(ice->server_info.user);
         ice->server_info.user = strdup(user->valuestring);
         cJSON *psw = cJSON_GetObjectItem(server_arr, "credential");
-        if (psw == NULL) {
+        if (!cJSON_IsString(psw) || psw->valuestring == NULL) {
             break;
         }
+        free(ice->server_info.psw);
         ice->server_info.psw = strdup(psw->valuestring);
         printf("Got url:%s user_name: %s psw:%s\n", ice->server_info.stun_url, ice->server_info.user, ice->server_info.psw);
     } while (0);
@@ -285,20 +288,23 @@ static int on_text(void *user, const char *text, size_t len)
             cJSON *method;
             if (msg == NULL) {
                 method = cJSON_GetObjectItem(_json, "type");
-                if (method == NULL) {
+                if (!cJSON_IsString(method) || method->valuestring == NULL) {
                     break;
                 }
                 msg = _json;
             } else {
+                if (!cJSON_IsString(msg) || msg->valuestring == NULL) {
+                    break;
+                }
                 msg = cJSON_Parse(msg->valuestring);
                 method = cJSON_GetObjectItem(msg, "type");
-                if (method == NULL) {
+                if (!cJSON_IsString(method) || method->valuestring == NULL) {
                     break;
                 }
             }
             if (strcmp(method->valuestring, "offer") == 0) {
                 cJSON *sdp = cJSON_GetObjectItem(msg, "sdp");
-                if (sdp) {
+                if (cJSON_IsString(sdp) && sdp->valuestring) {
                     esp_peer_signaling_msg_t msg = {
                         .type = ESP_PEER_SIGNALING_MSG_SDP,
                         .data = (uint8_t *)sdp->valuestring,
@@ -308,7 +314,7 @@ static int on_text(void *user, const char *text, size_t len)
                 }
             } else if (strcmp(method->valuestring, "answer") == 0) {
                 cJSON *sdp = cJSON_GetObjectItem(msg, "sdp");
-                if (sdp) {
+                if (cJSON_IsString(sdp) && sdp->valuestring) {
                     esp_peer_signaling_msg_t msg = {
                         .type = ESP_PEER_SIGNALING_MSG_SDP,
                         .data = (uint8_t *)sdp->valuestring,
@@ -327,7 +333,7 @@ static int on_text(void *user, const char *text, size_t len)
                 sg->ice_info.is_initiator = true;
             } else if (strcmp(method->valuestring, "candidate") == 0) {
                 cJSON *candidate = cJSON_GetObjectItem(msg, "candidate");
-                if (candidate) {
+                if (cJSON_IsString(candidate) && candidate->valuestring) {
                     esp_peer_signaling_msg_t msg = {
                         .type = ESP_PEER_SIGNALING_MSG_CANDIDATE,
                         .data = (uint8_t *)candidate->valuestring,
@@ -337,7 +343,7 @@ static int on_text(void *user, const char *text, size_t len)
                 }
             } else if (strcmp(method->valuestring, "customized") == 0) {
                 cJSON *custom_data = cJSON_GetObjectItem(msg, "data");
-                if (custom_data) {
+                if (cJSON_IsString(custom_data) && custom_data->valuestring) {
                     esp_peer_signaling_msg_t msg = {
                         .type = ESP_PEER_SIGNALING_MSG_CUSTOMIZED,
                         .data = (uint8_t *)custom_data->valuestring,
@@ -480,7 +486,7 @@ static char *get_base_url(char *room_url)
 
 static void update_ice_expire_time(wss_sig_t *sg)
 {
-    uint32_t expire_time = atoi(sg->ice_info.server_info.user);
+    uint32_t expire_time = sg->ice_info.server_info.user ? (uint32_t)atoi(sg->ice_info.server_info.user) : 0;
     uint32_t cur = time(NULL);
     if (expire_time > cur && expire_time < cur + 3600) {
         sg->ice_expire_time = expire_time - cur;
@@ -543,7 +549,7 @@ static int start_reload_ice_timer(wss_sig_t *sg)
 
 static int wss_signal_start(esp_peer_signaling_cfg_t *cfg, esp_peer_signaling_handle_t *h)
 {
-    if (cfg->signal_url == NULL || cfg == NULL || h == NULL) {
+    if (cfg == NULL || cfg->signal_url == NULL || h == NULL) {
         return -1;
     }
     wss_sig_t *sg = calloc(1, sizeof(wss_sig_t));
@@ -596,15 +602,22 @@ __exit:
 
 static int send_customized_data(wss_client_t *wss, esp_peer_signaling_msg_t *msg)
 {
-    if (msg->data[msg->size] != 0) {
-        ESP_LOGW(TAG, "Not a valid string");
+    if (msg == NULL || msg->data == NULL || msg->size <= 0) {
+        ESP_LOGW(TAG, "Invalid customized message");
         return -1;
     }
+    char *data_str = malloc((size_t)msg->size + 1);
+    if (data_str == NULL) {
+        return -1;
+    }
+    memcpy(data_str, msg->data, (size_t)msg->size);
+    data_str[msg->size] = '\0';
     cJSON *json = cJSON_CreateObject();
     cJSON *msg_obj = cJSON_CreateObject();
     cJSON_AddStringToObject(json, "cmd", "send");
     cJSON_AddStringToObject(msg_obj, "type", "customized");
-    cJSON_AddStringToObject(msg_obj, "data", (char *)msg->data);
+    cJSON_AddStringToObject(msg_obj, "data", data_str);
+    free(data_str);
     char *msg_body = cJSON_PrintUnformatted(msg_obj);
     if (msg_body) {
         cJSON_AddStringToObject(json, "msg", msg_body);

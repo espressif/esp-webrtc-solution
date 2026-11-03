@@ -45,10 +45,10 @@ typedef struct msg_q_t {
 } msg_q_t;
 
 msg_q_handle_t msg_q_create(int msg_number, int msg_size) {
-    msg_q_t* q = (msg_q_t*)calloc(1, sizeof(msg_q_t));
-    if (msg_size == 0 || msg_number == 0) {
+    if (msg_size <= 0 || msg_number <= 0) {
         return NULL;
     }
+    msg_q_t* q = (msg_q_t*)calloc(1, sizeof(msg_q_t));
     if (q) {
         q->name = "";
         pthread_mutex_init(&(q->data_mutex), NULL);
@@ -64,10 +64,10 @@ msg_q_handle_t msg_q_create(int msg_number, int msg_size) {
 }
 
 msg_q_handle_t msg_q_create_by_name(const char* name, int msg_size, int msg_number) {
-    msg_q_t* q = (msg_q_t*)calloc(1, sizeof(msg_q_t));
-    if (msg_size == 0 || msg_number == 0) {
+    if (msg_size <= 0 || msg_number <= 0) {
         return NULL;
     }
+    msg_q_t* q = (msg_q_t*)calloc(1, sizeof(msg_q_t));
     if (q) {
         q->name = name;
         pthread_mutex_init(&(q->data_mutex), NULL);

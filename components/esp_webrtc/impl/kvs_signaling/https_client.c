@@ -98,15 +98,16 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
             ESP_LOGI(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
             if (!esp_http_client_is_chunked_response(evt->client)) {
                 int content_len = esp_http_client_get_content_length(evt->client);
-                if (info->data == NULL && content_len) {
-                    info->data = heap_caps_calloc(1, content_len, MALLOC_CAP_SPIRAM);
+                if (info->data == NULL && content_len > 0) {
+                    info->data = heap_caps_calloc(1, (size_t)content_len + 1, MALLOC_CAP_SPIRAM);
                     if (info->data) {
                         info->size = content_len;
                     }
                 }
-                if (evt->data_len && info->fill_size + evt->data_len <= info->size) {
+                if (evt->data_len > 0 && info->data && info->fill_size + evt->data_len <= info->size) {
                     memcpy(info->data + info->fill_size, evt->data, evt->data_len);
                     info->fill_size += evt->data_len;
+                    info->data[info->fill_size] = '\0';
                 }
             }
             break;
@@ -487,7 +488,7 @@ int https_send_request(char* method, char** headers, char* url,
     char iso_8601_time[18];
     webrtc_utils_get_time_iso8601(iso_8601_time);
     ESP_LOGI(TAG, "Time: %s", iso_8601_time);
-    sprintf(headers_string, HEADERS, host, iso_8601_time);
+    snprintf(headers_string, 2000, HEADERS, host, iso_8601_time);
     http_params.pHeaders = headers_string;
     http_params.headersLen = strlen(headers_string);
 
@@ -504,8 +505,8 @@ int https_send_request(char* method, char** headers, char* url,
         .serviceLen = strlen("kinesisvideo"),
     };
 
-    // Reset authBufLen to buffer size before each call
-    size_t auth_buf_len = AUTH_BUF_LENGTH;
+    // Reset authBufLen to buffer size - 1 before each call
+    size_t auth_buf_len = AUTH_BUF_LENGTH - 1;
     SigV4Status_t sign_status =
         SigV4_GenerateHTTPAuthorization(&sigv4_params,
                                         authBuf,
@@ -513,7 +514,7 @@ int https_send_request(char* method, char** headers, char* url,
                                         &signature,
                                         &signatureLen);
 
-    if (sign_status != SigV4Success) {
+    if (sign_status != SigV4Success || auth_buf_len >= AUTH_BUF_LENGTH) {
         ESP_LOGE(TAG, "Signature Error! return: %d\n", (int) sign_status);
         goto __https_send_request_exit;
     } else {

@@ -70,10 +70,13 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
         case HTTP_EVENT_ON_HEADER:
             if (info->header) {
                 if (strcmp(evt->header_key, "Location") == 0) {
+                    free((void *)info->resp_keep.location);
                     info->resp_keep.location = strdup(evt->header_value);
                 } else if (strcmp(evt->header_key, "Authorization") == 0) {
+                    free((void *)info->resp_keep.auth);
                     info->resp_keep.auth = strdup(evt->header_value);
                 } else if (strcmp(evt->header_key, "Set-Cookie") == 0) {
+                    free((void *)info->resp_keep.cookie);
                     info->resp_keep.cookie = strdup(evt->header_value);
                 }
                 info->header(evt->header_key, evt->header_value, info->ctx);
@@ -85,15 +88,16 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
             ESP_LOGD(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
             if (!esp_http_client_is_chunked_response(evt->client)) {
                 int content_len = esp_http_client_get_content_length(evt->client);
-                if (info->data == NULL && content_len) {
-                    info->data = malloc(content_len);
+                if (info->data == NULL && content_len > 0) {
+                    info->data = malloc((size_t)content_len + 1);
                     if (info->data) {
                         info->size = content_len;
                     }
                 }
-                if (evt->data_len && info->fill_size + evt->data_len <= info->size) {
+                if (evt->data_len > 0 && info->data && info->fill_size + evt->data_len <= info->size) {
                     memcpy(info->data + info->fill_size, evt->data, evt->data_len);
                     info->fill_size += evt->data_len;
+                    info->data[info->fill_size] = '\0';
                 }
             }
             break;
@@ -132,15 +136,11 @@ static int https_handle_redirect(esp_http_client_handle_t client, https_request_
         esp_http_client_set_post_field(client, NULL, 0);
         esp_http_client_set_method(client, HTTP_METHOD_GET);
     }
-    char *full_url = strdup(resp->location);
+    char *full_url = (strncmp(resp->location, "http", 4) != 0)
+                         ? join_url(*last_url, resp->location)
+                         : strdup(resp->location);
     if (full_url == NULL) {
         return -1;
-    }
-    if (strncmp(resp->location , "http", 4) != 0) {
-        full_url = join_url(*last_url, resp->location);
-        if (full_url == NULL) {
-            return -1;
-        }
     }
     // Handle auth
     if (resp->auth) {
@@ -153,7 +153,11 @@ static int https_handle_redirect(esp_http_client_handle_t client, https_request_
     }
     // Handle cookie
     if (resp->cookie != NULL) {
-        esp_http_client_set_header(client, "Cookie", resp->cookie);
+        if (is_same_origin(*last_url, full_url)) {
+            esp_http_client_set_header(client, "Cookie", resp->cookie);
+        } else {
+            esp_http_client_set_header(client, "Cookie", NULL);
+        }
     }
     // Store to last url
     if (*last_url != req->url) {
@@ -249,7 +253,8 @@ int https_request_advance(https_request_cfg_t *cfg, https_request_t *req)
         while (req->headers[i]) {
             char *h = strdup(req->headers[i]);
             if (h == NULL) {
-                continue;
+                err = -1;
+                goto _exit;
             }
             char *dot = strchr(h, ':');
             if (dot) {
@@ -257,7 +262,10 @@ int https_request_advance(https_request_cfg_t *cfg, https_request_t *req)
                 if (strcmp(h, "Content-Type") == 0) {
                     has_content_type = true;
                 }
-                char *cont = dot + 2;
+                char *cont = dot + 1;
+                while (*cont == ' ' || *cont == '\t') {
+                    cont++;
+                }
                 esp_http_client_set_header(client, h, cont);
                 *dot = ':';
             }
