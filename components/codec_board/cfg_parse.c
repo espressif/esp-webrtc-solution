@@ -144,8 +144,15 @@ static board_cfg_line_t *parse_section(const char *s, int size, int *consume)
     board_cfg_attr_t *tail = NULL;
     cfg_line->type = name;
     s = name;
-    while (*(s++) != '{')
-        ;
+    while (s < end && *s != '\0' && *s != '{') {
+        s++;
+    }
+    if (s >= end || *s != '{') {
+        free(cfg_line);
+        *consume = (int)(end - start);
+        return NULL;
+    }
+    s++;
     int word_len = 0;
     const char *attr = NULL;
 

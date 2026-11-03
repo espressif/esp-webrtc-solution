@@ -792,6 +792,9 @@ static int pc_start(webrtc_t *rtc, esp_peer_ice_server_cfg_t *server_info, int s
         .role = rtc->ice_role,
         .ctx = rtc,
     };
+    if (rtc->rtc_cfg.peer_cfg.video_over_data_channel) {
+        peer_cfg.video_dir = ESP_PEER_MEDIA_DIR_NONE;
+    }
     memcpy(&peer_cfg.audio_info, &rtc->rtc_cfg.peer_cfg.audio_info, sizeof(esp_peer_audio_stream_info_t));
     if (rtc->rtc_cfg.peer_cfg.enable_data_channel == false || rtc->rtc_cfg.peer_cfg.video_over_data_channel == false) {
         memcpy(&peer_cfg.video_info, &rtc->rtc_cfg.peer_cfg.video_info, sizeof(esp_peer_video_stream_info_t));

@@ -145,8 +145,12 @@ int data_queue_consume_all(data_queue_t *q)
             }
             uint8_t *buffer = (uint8_t *) q->buffer + q->rp;
             int size = *((int *) buffer);
-            if (size < 0 || size >= q->size) {
-                *(int*)0 = 0;
+            if (size <= 0 || size >= q->size) {
+                q->rp = 0;
+                q->wp = 0;
+                q->filled = 0;
+                q->fill_end = 0;
+                break;
             }
             q->rp += size;
             q->filled -= size;

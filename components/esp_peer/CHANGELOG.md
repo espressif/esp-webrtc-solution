@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.5.8
+
+### Bug Fixes
+
+- Fixed `TURN` allocate not released when disconnected
+
+### Enhancement
+
+- Added some security check to avoid overwrite
+- Improve data channel connect speed instantly after DTLS connected
+
 ## v1.5.7
 
 ### Bug Fixes

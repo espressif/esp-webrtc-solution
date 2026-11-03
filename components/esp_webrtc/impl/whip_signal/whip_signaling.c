@@ -89,14 +89,15 @@ static int whip_signaling_start(esp_peer_signaling_cfg_t *cfg, esp_peer_signalin
 static void whip_sdp_answer(http_resp_t *resp, void *ctx)
 {
     whip_signaling_t *sig = (whip_signaling_t *)ctx;
-    printf("Get remote SDP %s\n", (char *)resp->data);
+    printf("Get remote SDP %.*s\n", resp->size, (char *)resp->data);
     SAFE_FREE(sig->remote_sdp);
-    sig->remote_sdp = (uint8_t *)malloc(resp->size);
+    sig->remote_sdp = (uint8_t *)malloc(resp->size + 1);
     if (sig->remote_sdp == NULL) {
         ESP_LOGE(TAG, "No enough memory for remote sdp");
         return;
     }
     memcpy(sig->remote_sdp, resp->data, resp->size);
+    sig->remote_sdp[resp->size] = 0;
     sig->remote_sdp_size = resp->size;
 }
 
@@ -110,14 +111,18 @@ static char *get_full_path(char *base, const char *url)
         return NULL;
     }
     root_path += 2;
-    char *root_path_end = url[0] == '/' ? strchr(root_path, '/') : strrchr(root_path, '/') + 1;
+    char *last_slash = strrchr(root_path, '/');
+    char *root_path_end = url[0] == '/' ? strchr(root_path, '/') : (last_slash ? last_slash + 1 : NULL);
     int base_len = root_path_end ? root_path_end - base : strlen(base);
     int url_len = strlen(url);
-    char *full_path = malloc(base_len + url_len + 1);
+    char *full_path = malloc(base_len + url_len + 2);
     if (!full_path) {
         return NULL;
     }
     strncpy(full_path, base, base_len);
+    if (root_path_end == NULL && url[0] != '/') {
+        full_path[base_len++] = '/';
+    }
     strcpy(full_path + base_len, url);
     return full_path;
 }
@@ -141,7 +146,7 @@ static char *get_param_value(char *s, char *param, int param_size)
 
 static int extract_ice_info(whip_signaling_t *sig, char *link)
 {
-    if (sig->server_num > MAX_SERVER_SUPPORT) {
+    if (sig->server_num >= MAX_SERVER_SUPPORT) {
         return ESP_PEER_ERR_OVER_LIMITED;
     }
     // Check if this Link header is for an ICE server
@@ -167,10 +172,14 @@ static int extract_ice_info(whip_signaling_t *sig, char *link)
     server_cfg.user = GET_PARAM_VALUE(link, "username=\"");
     server_cfg.psw = GET_PARAM_VALUE(link, "credential=\"");
     sig->ice_servers[sig->server_num] = (esp_peer_ice_server_cfg_t *)calloc(1, sizeof(esp_peer_ice_server_cfg_t));
-    if (sig->ice_servers[sig->server_num]) {
-        memcpy(sig->ice_servers[sig->server_num], &server_cfg, sizeof(esp_peer_ice_server_cfg_t));
-        sig->server_num++;
+    if (sig->ice_servers[sig->server_num] == NULL) {
+        SAFE_FREE(server_cfg.stun_url);
+        SAFE_FREE(server_cfg.user);
+        SAFE_FREE(server_cfg.psw);
+        return ESP_PEER_ERR_NO_MEM;
     }
+    memcpy(sig->ice_servers[sig->server_num], &server_cfg, sizeof(esp_peer_ice_server_cfg_t));
+    sig->server_num++;
     return ESP_PEER_ERR_NONE;
 }
 
@@ -241,7 +250,9 @@ static int whip_signaling_send_msg(esp_peer_signaling_handle_t h, esp_peer_signa
                     .server_info = *sig->ice_servers[0],
                 };
                 // TODO support more servers?
-                sig->cfg.on_ice_info(&ice_info, sig->cfg.ctx);
+                if (sig->cfg.on_ice_info) {
+                    sig->cfg.on_ice_info(&ice_info, sig->cfg.ctx);
+                }
             }
             // Try to extractor stun lists
             esp_peer_signaling_msg_t sdp_msg = {
@@ -249,7 +260,9 @@ static int whip_signaling_send_msg(esp_peer_signaling_handle_t h, esp_peer_signa
                 .data = sig->remote_sdp,
                 .size = sig->remote_sdp_size,
             };
-            sig->cfg.on_msg(&sdp_msg, sig->cfg.ctx);
+            if (sig->cfg.on_msg) {
+                sig->cfg.on_msg(&sdp_msg, sig->cfg.ctx);
+            }
             SAFE_FREE(sig->remote_sdp);
         } else if (sig->location) {
             char *sdp = strstr((char *)msg->data, "a=group:BUNDLE");
@@ -281,6 +294,7 @@ static int whip_signaling_stop(esp_peer_signaling_handle_t h)
         SAFE_FREE(auth);
     }
     sig->cfg.on_close(sig->cfg.ctx);
+    SAFE_FREE(sig->remote_sdp);
     SAFE_FREE(sig->location);
     for (int i = 0; i < sig->server_num; i++) {
         SAFE_FREE(sig->ice_servers[i]->stun_url);
