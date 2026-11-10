@@ -1,8 +1,8 @@
-# Agora Bot Station duplex audio demo
+# Agora Agent Studio duplex audio demo
 
-This solution connects an official ESP32-S3-Korvo V2 board to an Agora Bot
-Station Agent. The board uses Agora duplex WHIP as its only RTC join path. Bot
-Station assigns the channel, board string UID, and Agent string UID for each
+This demo connects an ESP32-S3-Korvo V2 board to an AI agent configured in
+Agora Agent Studio. The board uses Agora duplex WHIP as its only RTC join path.
+Agent Studio assigns the channel, board string UID, and Agent string UID for each
 conversation; the firmware does not use a fixed channel. Microphone and
 speaker audio use Opus, 16 kHz, mono in both directions. Playback is
 stereo so acoustic echo cancellation can use the speaker reference.
@@ -13,13 +13,13 @@ stereo so acoustic echo cancellation can use the speaker reference.
 - ESP-IDF 5.4.4 or newer.
 - One USB connection to the POWER socket and one to the UART socket.
 - A 2.4 GHz Wi-Fi network reachable by the board.
-- Access to an Agora Bot Station deployment and its console.
+- Access to an Agora Agent Studio deployment and its console.
 - An Agora account and project.
 
 Create a free Agora account or sign in at the
 [Agora Console](https://console.agora.io/). Create a project and obtain its
 App ID and App Certificate. The project used by the firmware must be the same
-project configured for the Bot Station deployment.
+project configured for the Agent Studio deployment.
 
 ## Configure authentication and Wi-Fi
 
@@ -37,7 +37,8 @@ idf.py menuconfig
 Use `idf.py gen-bmgr-config -l` to list the board profiles available in the
 installed Board Manager package.
 
-Under **Agora Bot Station duplex audio demo**, configure:
+In the demo's configuration menu, configure the settings below. Use `/` in
+`menuconfig` to find a setting by its configuration symbol.
 
 - **Agora App ID**: the App ID shown for the project in Agora Console.
 - **Agora App Cert**: the App Certificate shown for the project when dynamic
@@ -46,17 +47,18 @@ Under **Agora Bot Station duplex audio demo**, configure:
 - **Agora WHIP endpoint base URL**: the endpoint base URL supplied for the
   deployment. The default is the production endpoint at
   `https://ap-webrtc-whip.ap.sd-rtn.com`.
-- **Bot Station API base URL**: the Device API URL for the same deployment.
+- **Agent Studio API base URL** (`AGORA_DEMO_BOT_STATION_BASE_URL`): the
+  Device API URL for the same deployment.
   The default is `https://botstation.agora.io/api`.
-- **Bot Station hardware model**: the model reported during pairing. The
-  default is suitable for ESP32-S3-Korvo V2.
+- **Agent Studio hardware model** (`AGORA_DEMO_HARDWARE_MODEL`): the model
+  reported during pairing. The default is suitable for ESP32-S3-Korvo V2.
 - **Wi-Fi SSID**: the 2.4 GHz access point name.
 - **Wi-Fi password**: the access point password. Leave it empty only for an
   open network.
 
-The App ID returned by Bot Station is checked against the configured App ID.
+The App ID returned by Agent Studio is checked against the configured App ID.
 After a production deployment is ready, change the App ID, App Certificate,
-WHIP base URL, and Bot Station API base URL together so they all refer to that
+WHIP base URL, and Agent Studio API base URL together so they all refer to that
 deployment.
 
 Do not commit `sdkconfig`, Wi-Fi credentials, App Certificates, device tokens,
@@ -67,13 +69,13 @@ but production firmware should not contain a long-lived signing secret.
 
 On first boot after Wi-Fi and time synchronization succeed, the board derives
 a stable device ID from its Wi-Fi MAC address and requests a six-digit pairing
-code. The UART console prints:
+code. The UART console prints a message ending with:
 
 ```text
-Bot Station pairing code: <six digits>
+pairing code: <six digits>
 ```
 
-Sign in to the [Agora Bot Station console](https://botstation.agora.io/),
+Sign in to the [Agora Agent Studio console](https://botstation.agora.io/),
 select the Agent that should own the board, and pair the device with that code.
 The code binds the board's stable device ID to that exact Agent. The channel
 and UIDs returned later identify one conversation; they are not the Agent's
@@ -85,20 +87,20 @@ in the `bot_station` NVS namespace. The pairing code and short-lived
 `pair_token` are never persisted.
 
 On later boots, the firmware loads the device token, validates that the board
-is still bound, and starts a conversation automatically. Bot Station returns
+is still bound, and starts a conversation automatically. Agent Studio returns
 the channel and string UIDs. The firmware validates the returned Agent and App
 ID, generates a short-lived WHIP JWT with the configured App Certificate, and
 joins through duplex WHIP. Runtime binding checks detect a remote unbind and
 return the board to pairing.
 
-To bind the board to a different Agent, unbind it in the Bot Station console,
+To bind the board to a different Agent, unbind it in the Agent Studio console,
 then run this UART command:
 
 ```text
 reset-pairing
 ```
 
-The command stops the current conversation, clears only the local Bot Station
+The command stops the current conversation, clears only the local Agent Studio
 credential, and requests a new pairing code. It does not erase saved Wi-Fi
 settings or the full NVS partition.
 
@@ -134,13 +136,14 @@ The UART console also supports:
 
 - `start`: stop the current conversation and start a new one.
 - `stop`: stop the current conversation and disable automatic restart.
-- `reset-pairing`: clear only the local Bot Station credential and pair again.
+- `reset-pairing`: clear only the local Agent Studio credential and pair again.
 - `wifi <ssid> [password]`: save new Wi-Fi credentials and reconnect.
 
 ## Verify
 
-Keep the UART monitor open while the board starts. Timestamps and assigned
-identifiers vary, but a healthy startup reaches each stage below in order.
+Keep the UART monitor open while the board starts. Match the message fragments
+below; timestamps, prefixes, and assigned identifiers vary. A healthy startup
+reaches each stage below in order.
 
 The common hardware and network startup is:
 
@@ -156,22 +159,22 @@ Device ID: AG-<MAC address>
 On the first boot, expect the pairing path:
 
 ```text
-Persistent Bot Station credential: not present
+credential: not present
 /devices/pair-codes returned HTTP 201
-Bot Station pairing code: <six digits>
+pairing code: <six digits>
 Waiting for this device to be claimed
 Pairing pending; next poll in <seconds> seconds
 Pairing completed; device credential saved
 ```
 
-`Pairing pending` is normal until the six-digit code is entered in the Bot
-Station console. On later boots, the saved credential takes the shorter path:
+`Pairing pending` is normal until the six-digit code is entered in the Agent
+Studio console. On later boots, the saved credential takes the shorter path:
 
 ```text
-Persistent Bot Station credential: present
+credential: present
 Binding response auth=Device ... status=bound device_id=match
 Runtime binding remains valid
-Restored Bot Station binding from NVS
+binding from NVS
 ```
 
 After either pairing path succeeds, the conversation and WHIP connection
@@ -214,15 +217,15 @@ markers are the SDP answer, selected ICE pair, and connected event.
   `Pair-code request failed`, `Pair-code response is incomplete`,
   `Binding response is incomplete or inconsistent`,
   `Bound pairing response omitted device_token`, or NVS save errors. Check
-  the Bot Station API base URL, bind the displayed device ID in the matching
-  Bot Station console, and verify that NVS is writable.
+  the Agent Studio API base URL, bind the displayed device ID in the matching
+  Agent Studio console, and verify that NVS is writable.
   `Binding status=expired` or `Binding status=unbound` intentionally returns
   the device to pairing; enter the newly displayed code.
 
 - **Conversation assignment:** investigate `Conversation start failed`,
   `Conversation response failed identity validation`, or
-  `Bot Station conversation start failed`. Check that the bound Agent is
-  available and that Bot Station returns the configured App ID, a channel,
+  `conversation start failed`. Check that the bound Agent is
+  available and that Agent Studio returns the configured App ID, a channel,
   device UID, Agent UID, and conversation ID.
 
 - **JWT and WHIP request:** investigate
